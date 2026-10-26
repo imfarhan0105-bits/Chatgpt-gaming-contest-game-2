@@ -505,7 +505,7 @@ export class CockAndKeysGame {
       }
 
       mesh.position.lerp(new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z), 0.35);
-      mesh.rotation.y = p.yaw;
+      mesh.rotation.y = p.yaw + Math.PI;
 
       const smile = mesh.getObjectByName('smileMesh');
       if (smile) smile.visible = p.isSmiling;
@@ -658,7 +658,7 @@ export class CockAndKeysGame {
       // In 3rd person mode, player mesh is visible
       this.localPlayerMesh.visible = this.controls.isThirdPerson;
       this.localPlayerMesh.position.set(this.controls.pos.x, this.controls.pos.y, this.controls.pos.z);
-      this.localPlayerMesh.rotation.y = this.controls.yaw;
+      this.localPlayerMesh.rotation.y = this.controls.yaw + Math.PI;
 
       // Animate walking limbs
       const leftLeg = this.localPlayerMesh.getObjectByName('leftLeg');

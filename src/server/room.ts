@@ -478,9 +478,9 @@ export class GameRoom {
 
       // Origin & Direction
       const origin = aimOrigin || { x: player.pos.x, y: player.pos.y + 1.6, z: player.pos.z };
-      const dirX = aimDirection ? aimDirection.x : Math.sin(player.yaw) * Math.cos(player.pitch);
+      const dirX = aimDirection ? aimDirection.x : -Math.sin(player.yaw) * Math.cos(player.pitch);
       const dirY = aimDirection ? aimDirection.y : -Math.sin(player.pitch);
-      const dirZ = aimDirection ? aimDirection.z : Math.cos(player.yaw) * Math.cos(player.pitch);
+      const dirZ = aimDirection ? aimDirection.z : -Math.cos(player.yaw) * Math.cos(player.pitch);
 
       this.broadcast({
         type: 'gunshot_event',
@@ -488,12 +488,16 @@ export class GameRoom {
         pos: origin
       });
 
-      // Raycast against roosters, NPCs, and players
+      // Direction vector in horizontal plane
+      const dirLen = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
+      const ndx = dirX / dirLen;
+      const ndz = dirZ / dirLen;
+
       let hitSomething = false;
       let hitTargetPos = {
-        x: origin.x + dirX * WEAPON_STATS.pistol.range,
+        x: origin.x + ndx * WEAPON_STATS.pistol.range,
         y: origin.y + dirY * WEAPON_STATS.pistol.range,
-        z: origin.z + dirZ * WEAPON_STATS.pistol.range
+        z: origin.z + ndz * WEAPON_STATS.pistol.range
       };
 
       // 1. Roosters
@@ -503,20 +507,20 @@ export class GameRoom {
         const dz = rooster.pos.z - origin.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
 
-        // Check angle
-        const angleToTarget = Math.atan2(dx, dz);
-        const diff = Math.abs(angleToTarget - player.yaw);
-        if (dist <= WEAPON_STATS.pistol.range && (diff < 0.25 || diff > Math.PI * 2 - 0.25)) {
-          rooster.health -= WEAPON_STATS.pistol.damage;
-          hitSomething = true;
-          hitTargetPos = { x: rooster.pos.x, y: rooster.pos.y + 0.5, z: rooster.pos.z };
+        if (dist > 0.1 && dist <= WEAPON_STATS.pistol.range) {
+          const dot = (dx * ndx + dz * ndz) / dist;
+          if (dot > 0.88) {
+            rooster.health -= WEAPON_STATS.pistol.damage;
+            hitSomething = true;
+            hitTargetPos = { x: rooster.pos.x, y: rooster.pos.y + 0.5, z: rooster.pos.z };
 
-          if (rooster.health <= 0) {
-            rooster.health = 0;
-            rooster.isKnockedOut = true;
-            this.dropRoosterKey(rooster);
+            if (rooster.health <= 0) {
+              rooster.health = 0;
+              rooster.isKnockedOut = true;
+              this.dropRoosterKey(rooster);
+            }
+            break;
           }
-          break;
         }
       }
 
@@ -527,19 +531,20 @@ export class GameRoom {
           const dx = npc.pos.x - origin.x;
           const dz = npc.pos.z - origin.z;
           const dist = Math.sqrt(dx * dx + dz * dz);
-          const angleToTarget = Math.atan2(dx, dz);
-          const diff = Math.abs(angleToTarget - player.yaw);
 
-          if (dist <= WEAPON_STATS.pistol.range && (diff < 0.25 || diff > Math.PI * 2 - 0.25)) {
-            npc.health -= WEAPON_STATS.pistol.damage;
-            hitSomething = true;
-            hitTargetPos = { x: npc.pos.x, y: npc.pos.y + 1.2, z: npc.pos.z };
+          if (dist > 0.1 && dist <= WEAPON_STATS.pistol.range) {
+            const dot = (dx * ndx + dz * ndz) / dist;
+            if (dot > 0.88) {
+              npc.health -= WEAPON_STATS.pistol.damage;
+              hitSomething = true;
+              hitTargetPos = { x: npc.pos.x, y: npc.pos.y + 1.2, z: npc.pos.z };
 
-            if (npc.health <= 0) {
-              npc.health = 0;
-              this.applyWrongfulKill(player, npc.faction);
+              if (npc.health <= 0) {
+                npc.health = 0;
+                this.applyWrongfulKill(player, npc.faction);
+              }
+              break;
             }
-            break;
           }
         }
       }
@@ -551,20 +556,21 @@ export class GameRoom {
           const dx = other.pos.x - origin.x;
           const dz = other.pos.z - origin.z;
           const dist = Math.sqrt(dx * dx + dz * dz);
-          const angleToTarget = Math.atan2(dx, dz);
-          const diff = Math.abs(angleToTarget - player.yaw);
 
-          if (dist <= WEAPON_STATS.pistol.range && (diff < 0.25 || diff > Math.PI * 2 - 0.25)) {
-            other.health -= WEAPON_STATS.pistol.damage;
-            hitSomething = true;
-            hitTargetPos = { x: other.pos.x, y: other.pos.y + 1.2, z: other.pos.z };
+          if (dist > 0.1 && dist <= WEAPON_STATS.pistol.range) {
+            const dot = (dx * ndx + dz * ndz) / dist;
+            if (dot > 0.88) {
+              other.health -= WEAPON_STATS.pistol.damage;
+              hitSomething = true;
+              hitTargetPos = { x: other.pos.x, y: other.pos.y + 1.2, z: other.pos.z };
 
-            if (other.health <= 0) {
-              other.health = 0;
-              other.isKnockedOut = true;
-              this.dropPlayerInventory(other);
+              if (other.health <= 0) {
+                other.health = 0;
+                other.isKnockedOut = true;
+                this.dropPlayerInventory(other);
+              }
+              break;
             }
-            break;
           }
         }
       }

@@ -70,8 +70,8 @@ describe('Cock & Keys — Advanced Weapons, PvP & Game Rule Tests', () => {
     player.activeSlot = 2;
 
     const rooster = Array.from(room.roosters.values())[0];
-    rooster.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z + 10 };
-    player.yaw = 0; // Facing +Z direction towards rooster
+    rooster.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z - 10 };
+    player.yaw = 0; // Facing forward down -Z towards rooster
     player.pitch = 0;
 
     const initialHealth = rooster.health;

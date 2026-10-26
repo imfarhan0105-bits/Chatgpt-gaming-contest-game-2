@@ -65,7 +65,7 @@ export class PlayerControls {
       this.yaw -= movementX * sensitivity;
       this.pitch -= movementY * sensitivity;
 
-      // Pitch clamping
+      // Pitch clamping (-85 to +85 degrees)
       const maxPitch = Math.PI / 2 - 0.08;
       this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
     });
@@ -148,12 +148,10 @@ export class PlayerControls {
       }
     });
 
-    // Prevent context menu on right click
     window.addEventListener('contextmenu', (e) => {
       if (this.isLocked) e.preventDefault();
     });
 
-    // Mouse scroll wheel weapon switch
     window.addEventListener('wheel', (e) => {
       if (!this.isLocked) return;
       const direction = e.deltaY > 0 ? 1 : -1;
@@ -169,26 +167,49 @@ export class PlayerControls {
       return;
     }
 
-    // Direction calculation
-    const forward = (this.keys['KeyW'] || this.keys['ArrowUp'] ? 1 : 0) - (this.keys['KeyS'] || this.keys['ArrowDown'] ? 1 : 0);
-    const strafe = (this.keys['KeyD'] || this.keys['ArrowRight'] ? 1 : 0) - (this.keys['KeyA'] || this.keys['ArrowLeft'] ? 1 : 0);
+    // Direction calculation:
+    // W and ArrowUp = Forward (+1)
+    // S and ArrowDown = Backward (-1)
+    // D and ArrowRight = Right (+1)
+    // A and ArrowLeft = Left (-1)
+    const forwardInput = (this.keys['KeyW'] || this.keys['ArrowUp'] ? 1 : 0) - (this.keys['KeyS'] || this.keys['ArrowDown'] ? 1 : 0);
+    const strafeInput = (this.keys['KeyD'] || this.keys['ArrowRight'] ? 1 : 0) - (this.keys['KeyA'] || this.keys['ArrowLeft'] ? 1 : 0);
     const isSprinting = !!(this.keys['ShiftLeft'] || this.keys['ShiftRight']) && !this.isCrouching && !this.isAiming;
 
+    const isMovingNow = forwardInput !== 0 || strafeInput !== 0;
     const moveVector = new THREE.Vector3();
-    const isMovingNow = forward !== 0 || strafe !== 0;
 
     if (isMovingNow) {
-      const moveAngle = this.yaw + Math.atan2(strafe, forward);
       let speed = PLAYER_WALK_SPEED;
       if (isSprinting) speed = PLAYER_SPRINT_SPEED;
       else if (this.isCrouching) speed = PLAYER_CROUCH_SPEED;
 
-      moveVector.x = Math.sin(moveAngle) * speed;
-      moveVector.z = Math.cos(moveAngle) * speed;
+      // In Three.js, horizontal forward direction for given yaw:
+      // forward = (-sin(yaw), 0, -cos(yaw))
+      const fX = -Math.sin(this.yaw);
+      const fZ = -Math.cos(this.yaw);
+
+      // right vector (perpendicular to forward):
+      // right = (cos(yaw), 0, -sin(yaw))
+      const rX = Math.cos(this.yaw);
+      const rZ = -Math.sin(this.yaw);
+
+      // Combine forward and strafe inputs
+      let dirX = fX * forwardInput + rX * strafeInput;
+      let dirZ = fZ * forwardInput + rZ * strafeInput;
+
+      // Normalize diagonal movement so diagonal isn't faster
+      const len = Math.sqrt(dirX * dirX + dirZ * dirZ);
+      if (len > 0.001) {
+        dirX /= len;
+        dirZ /= len;
+      }
+
+      moveVector.x = dirX * speed;
+      moveVector.z = dirZ * speed;
 
       this.walkCycleTimer += delta * (isSprinting ? 12 : 7.5);
     } else {
-      // Return walk cycle gradually to idle
       this.walkCycleTimer = 0;
     }
 
@@ -223,46 +244,47 @@ export class PlayerControls {
 
   private updateCameraPosition() {
     this.targetCamDistance = this.isAiming ? 1.6 : (this.isThirdPerson ? 2.8 : 0);
-    // Smooth camera zoom
-    this.currentCamDistance += (this.targetCamDistance - this.currentCamDistance) * 0.15;
+    this.currentCamDistance += (this.targetCamDistance - this.currentCamDistance) * 0.18;
 
     const eyeHeight = this.isCrouching ? 1.1 : 1.7;
     const playerCenter = new THREE.Vector3(this.pos.x, this.pos.y + eyeHeight, this.pos.z);
 
+    // Camera rotation matches player aim
+    this.camera.rotation.order = 'YXZ';
+    this.camera.rotation.y = this.yaw;
+    this.camera.rotation.x = this.pitch;
+    this.camera.fov = this.isAiming ? 50 : 75;
+    this.camera.updateProjectionMatrix();
+
     if (this.currentCamDistance < 0.1) {
-      // First Person
-      this.camera.rotation.order = 'YXZ';
-      this.camera.rotation.y = this.yaw;
-      this.camera.rotation.x = this.pitch;
+      // First Person: Camera placed at player's eyes
       this.camera.position.copy(playerCenter);
-      this.camera.fov = this.isAiming ? 55 : 75;
-      this.camera.updateProjectionMatrix();
     } else {
-      // Third-Person PvP Over-the-Shoulder Camera
-      const shoulderX = Math.cos(this.yaw) * (this.isAiming ? 0.35 : this.shoulderOffset);
-      const shoulderZ = -Math.sin(this.yaw) * (this.isAiming ? 0.35 : this.shoulderOffset);
+      // Third-Person PvP Over-the-Shoulder Camera:
+      // Forward direction: f = (-sin(yaw)*cos(pitch), -sin(pitch), -cos(yaw)*cos(pitch))
+      // Right direction: r = (cos(yaw), 0, -sin(yaw))
+      const fX = -Math.sin(this.yaw) * Math.cos(this.pitch);
+      const fY = -Math.sin(this.pitch);
+      const fZ = -Math.cos(this.yaw) * Math.cos(this.pitch);
 
-      const camDirX = Math.sin(this.yaw) * Math.cos(this.pitch);
-      const camDirY = -Math.sin(this.pitch);
-      const camDirZ = Math.cos(this.yaw) * Math.cos(this.pitch);
+      const rX = Math.cos(this.yaw);
+      const rZ = -Math.sin(this.yaw);
 
-      let camX = playerCenter.x + shoulderX - camDirX * this.currentCamDistance;
-      let camY = playerCenter.y + 0.3 - camDirY * this.currentCamDistance;
-      let camZ = playerCenter.z + shoulderZ - camDirZ * this.currentCamDistance;
+      const offsetShoulder = this.isAiming ? 0.35 : this.shoulderOffset;
+
+      // Position camera behind player (opposite of forward) and slightly to the right shoulder
+      let camX = playerCenter.x - fX * this.currentCamDistance + rX * offsetShoulder;
+      let camY = playerCenter.y - fY * this.currentCamDistance + 0.25;
+      let camZ = playerCenter.z - fZ * this.currentCamDistance + rZ * offsetShoulder;
 
       // Camera collision prevention against buildings
       if (this.town.checkCollision(new THREE.Vector3(camX, camY, camZ), 0.3)) {
-        camX = playerCenter.x + shoulderX * 0.5 - camDirX * 1.0;
-        camY = playerCenter.y + 0.2 - camDirY * 1.0;
-        camZ = playerCenter.z + shoulderZ * 0.5 - camDirZ * 1.0;
+        camX = playerCenter.x - fX * 1.0 + rX * (offsetShoulder * 0.5);
+        camY = playerCenter.y - fY * 1.0 + 0.2;
+        camZ = playerCenter.z - fZ * 1.0 + rZ * (offsetShoulder * 0.5);
       }
 
       this.camera.position.set(camX, camY, camZ);
-      this.camera.rotation.order = 'YXZ';
-      this.camera.rotation.y = this.yaw;
-      this.camera.rotation.x = this.pitch;
-      this.camera.fov = this.isAiming ? 50 : 75;
-      this.camera.updateProjectionMatrix();
     }
   }
 
