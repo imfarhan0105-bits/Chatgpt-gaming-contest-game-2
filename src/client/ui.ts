@@ -1,7 +1,6 @@
-import { GameSnapshot, PlayerRole } from '../shared/types.ts';
+import { GameSnapshot, InventoryItem, PlayerRole } from '../shared/types.ts';
 
 export class UIManager {
-  // Elements
   private hud: HTMLElement;
   private crosshair: HTMLElement;
   private interactionPrompt: HTMLElement;
@@ -24,6 +23,11 @@ export class UIManager {
   private redMeterPips: HTMLElement[];
   private riddleBox: HTMLElement;
   private riddleText: HTMLElement;
+
+  // Inventory & Weapon HUD
+  private invSlots: HTMLElement[] = [];
+  private invNames: HTMLElement[] = [];
+  private weaponAmmoDisplay: HTMLElement | null = null;
 
   // Lobby Elements
   private lobbyRoomCodeEl: HTMLElement;
@@ -74,6 +78,13 @@ export class UIManager {
     this.riddleBox = document.getElementById('riddle-box')!;
     this.riddleText = document.getElementById('riddle-text')!;
 
+    for (let s = 0; s < 4; s++) {
+      const slot = document.getElementById(`slot-${s}`);
+      const name = document.getElementById(`slot-${s}-name`);
+      if (slot) this.invSlots.push(slot);
+      if (name) this.invNames.push(name);
+    }
+
     this.lobbyRoomCodeEl = document.getElementById('lobby-room-code')!;
     this.lobbyPlayerListEl = document.getElementById('lobby-player-list')!;
     this.btnStartMatch = document.getElementById('btn-start-match')!;
@@ -90,6 +101,28 @@ export class UIManager {
     this.btnLeaveLobby = document.getElementById('btn-leave-lobby') as HTMLButtonElement;
     this.btnPlayAgain = document.getElementById('btn-play-again') as HTMLButtonElement;
     this.menuErrorEl = document.getElementById('menu-error')!;
+
+    this.setupWeaponAmmoElement();
+  }
+
+  private setupWeaponAmmoElement() {
+    const bottomCenter = document.getElementById('hud-bottom-center');
+    if (bottomCenter) {
+      this.weaponAmmoDisplay = document.createElement('div');
+      this.weaponAmmoDisplay.id = 'weapon-ammo-display';
+      this.weaponAmmoDisplay.style.position = 'absolute';
+      this.weaponAmmoDisplay.style.top = '-28px';
+      this.weaponAmmoDisplay.style.right = '0';
+      this.weaponAmmoDisplay.style.background = 'rgba(0,0,0,0.7)';
+      this.weaponAmmoDisplay.style.padding = '4px 8px';
+      this.weaponAmmoDisplay.style.borderRadius = '4px';
+      this.weaponAmmoDisplay.style.fontSize = '12px';
+      this.weaponAmmoDisplay.style.fontWeight = 'bold';
+      this.weaponAmmoDisplay.style.color = '#38bdf8';
+      this.weaponAmmoDisplay.style.border = '1px solid #0284c7';
+      this.weaponAmmoDisplay.textContent = 'AMMO: --';
+      bottomCenter.appendChild(this.weaponAmmoDisplay);
+    }
   }
 
   public showMainMenu() {
@@ -174,6 +207,32 @@ export class UIManager {
     const pct = Math.max(0, Math.min(100, (current / max) * 100));
     this.healthBarFill.style.width = `${pct}%`;
     this.healthTextEl.textContent = `${Math.ceil(current)} / ${max}`;
+  }
+
+  public updateInventory(inventory: (InventoryItem | null)[], activeSlot: number) {
+    for (let i = 0; i < 4; i++) {
+      const item = inventory[i];
+      if (this.invNames[i]) {
+        this.invNames[i].textContent = item ? item.name : 'Empty';
+      }
+      if (this.invSlots[i]) {
+        if (i === activeSlot) {
+          this.invSlots[i].classList.add('selected');
+        } else {
+          this.invSlots[i].classList.remove('selected');
+        }
+      }
+    }
+
+    const activeItem = inventory[activeSlot];
+    if (this.weaponAmmoDisplay) {
+      if (activeItem?.type === 'pistol') {
+        this.weaponAmmoDisplay.style.display = 'block';
+        this.weaponAmmoDisplay.textContent = `AMMO: ${activeItem.ammo ?? 0} / 12 [R]`;
+      } else {
+        this.weaponAmmoDisplay.style.display = 'none';
+      }
+    }
   }
 
   public updateRedMeter(level: number) {

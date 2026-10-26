@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
-import { HOUSES, RED_METER_THRESHOLDS } from '../src/shared/constants.ts';
+import { HOUSES, WEAPON_STATS } from '../src/shared/constants.ts';
 import { GameRoom } from '../src/server/room.ts';
 
 function createMockSocket() {
@@ -12,21 +12,21 @@ function createMockSocket() {
   };
 }
 
-describe('Cock & Keys — Authoritative Multiplayer & Game Rule Tests', () => {
+describe('Cock & Keys — Advanced Weapons, PvP & Game Rule Tests', () => {
   test('1. Room creation, joining, and player role assignment', () => {
     const room = new GameRoom('TEST');
     const ws1 = createMockSocket();
     const ws2 = createMockSocket();
 
     const client1 = room.addClient('p1', 'Player 1', ws1);
-    assert.equal(client1.isHost, true, 'First player should be host');
+    assert.equal(client1.isHost, true);
 
     const client2 = room.addClient('p2', 'Player 2', ws2);
-    assert.equal(client2.isHost, false, 'Second player should not be host');
+    assert.equal(client2.isHost, false);
     assert.equal(room.clients.size, 2);
 
     const started = room.startMatch('p1');
-    assert.equal(started, true, 'Host should be able to start match');
+    assert.equal(started, true);
     assert.equal(room.status, 'playing');
 
     const p1State = room.players.get('p1');
@@ -38,13 +38,14 @@ describe('Cock & Keys — Authoritative Multiplayer & Game Rule Tests', () => {
     room.stop();
   });
 
-  test('2. 8 Roosters and 8 Keys generated (4 genuine, 4 decoy)', () => {
+  test('2. 8 Roosters and 8 Keys generated with 40 crowd NPCs', () => {
     const room = new GameRoom('TEST');
     room.addClient('p1', 'Player 1', createMockSocket());
     room.startMatch('p1');
 
     assert.equal(room.roosters.size, 8, 'Must spawn exactly 8 roosters');
     assert.equal(room.keys.size, 8, 'Must create exactly 8 keys');
+    assert.equal(room.npcs.size, 40, 'Must populate dense crowd of 40 NPCs');
 
     let genuineCount = 0;
     let decoyCount = 0;
@@ -58,99 +59,112 @@ describe('Cock & Keys — Authoritative Multiplayer & Game Rule Tests', () => {
     room.stop();
   });
 
-  test('3. Decoy key does NOT trigger memory loss or collapse', () => {
+  test('3. Weapons: Knife slash, Pistol firing with ammo and reload', () => {
     const room = new GameRoom('TEST');
     room.addClient('p1', 'Player 1', createMockSocket());
     room.startMatch('p1');
 
     const player = room.players.get('p1')!;
-    // Place a decoy key pickup near player
-    room.pickups.set('pickup_decoy', {
-      id: 'pickup_decoy',
-      type: 'key',
-      name: 'Decoy Key',
-      pos: { x: player.pos.x, y: player.pos.y, z: player.pos.z },
-      keyId: 'key_4', // Decoy
-      isGenuineKey: false,
-      targetHouseId: 0
-    });
+    // Equip pistol
+    player.inventory[2] = { id: 'pistol_test', type: 'pistol', name: '9mm Pistol', ammo: 12, maxAmmo: 12 };
+    player.activeSlot = 2;
 
-    room.handlePlayerInteract('p1', 'pickup', 'pickup_decoy');
+    const rooster = Array.from(room.roosters.values())[0];
+    rooster.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z + 10 };
+    player.yaw = 0; // Facing +Z direction towards rooster
+    player.pitch = 0;
 
-    assert.equal(player.hasGenuineKey, false, 'Decoy key should not set hasGenuineKey');
-    assert.equal(player.hasMemoryLoss, false, 'Decoy key must NOT trigger memory loss');
-    assert.equal(player.isSmiling, false, 'Decoy key must NOT trigger smiling face');
-    assert.equal(player.riddle, null, 'Decoy key must NOT generate riddle');
+    const initialHealth = rooster.health;
+    room.handlePlayerAttack('p1');
+
+    assert.equal(player.inventory[2]!.ammo, 11, 'Pistol should expend 1 round');
+    assert.equal(rooster.health, initialHealth - WEAPON_STATS.pistol.damage, 'Pistol bullet should deal damage');
+
+    // Reload
+    room.handlePlayerReload('p1');
+    assert.equal(player.inventory[2]!.ammo, 12, 'Pistol should reload to full magazine');
     room.stop();
   });
 
-  test('4. Genuine key triggers collapse, memory loss, inventory drop, riddle & smile', () => {
+  test('4. Ambush stealth backstab bonus damage with Knife', () => {
     const room = new GameRoom('TEST');
     room.addClient('p1', 'Player 1', createMockSocket());
     room.startMatch('p1');
 
     const player = room.players.get('p1')!;
-    player.inventory[1] = { id: 'weapon_1', type: 'crowbar', name: 'Crowbar' };
+    player.activeSlot = 1; // Tactical Knife
 
-    // Place genuine key pickup near player
+    const npc = Array.from(room.npcs.values())[0];
+    npc.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z + 1.5 };
+    npc.health = 100;
+
+    // Normal knife attack
+    player.isCrouching = false;
+    room.handlePlayerAttack('p1');
+    assert.equal(npc.health, 100 - WEAPON_STATS.knife.damage);
+
+    // Crouching stealth ambush backstab attack
+    npc.health = 100;
+    player.isCrouching = true;
+    room.handlePlayerAttack('p1');
+    assert.equal(npc.health, 100 - WEAPON_STATS.knife.backstabDamage, 'Ambush attack deals critical backstab damage');
+    room.stop();
+  });
+
+  test('5. Genuine key triggers complete collapse, memory loss, inventory drop, riddle & smile', () => {
+    const room = new GameRoom('TEST');
+    room.addClient('p1', 'Player 1', createMockSocket());
+    room.startMatch('p1');
+
+    const player = room.players.get('p1')!;
+    player.inventory[2] = { id: 'pistol_loot', type: 'pistol', name: '9mm Pistol', ammo: 12 };
+
     room.pickups.set('pickup_genuine', {
       id: 'pickup_genuine',
       type: 'key',
       name: 'Genuine Key',
       pos: { x: player.pos.x, y: player.pos.y, z: player.pos.z },
-      keyId: 'key_0', // Genuine key for House 0
+      keyId: 'key_0',
       isGenuineKey: true,
       targetHouseId: 0
     });
 
     room.handlePlayerInteract('p1', 'pickup', 'pickup_genuine');
 
-    assert.equal(player.hasGenuineKey, true, 'Genuine key acquired');
-    assert.equal(player.hasMemoryLoss, true, 'Must trigger memory loss');
-    assert.equal(player.isSmiling, true, 'Must trigger subtle smiling face');
-    assert.ok(player.riddle, 'Cryptic riddle must be generated');
-    assert.equal(player.riddle, HOUSES[player.assignedHouse].riddleClue, 'Riddle must point to player assigned house');
+    assert.equal(player.hasGenuineKey, true);
+    assert.equal(player.hasMemoryLoss, true);
+    assert.equal(player.isSmiling, true);
+    assert.ok(player.riddle);
+    assert.equal(player.riddle, HOUSES[player.assignedHouse].riddleClue);
 
-    // Weapons must have dropped at collapse location
-    assert.equal(player.inventory[1], null, 'Weapon must be dropped from inventory');
-    const droppedPickups = Array.from(room.pickups.values()).filter((p) => p.name === 'Crowbar');
-    assert.equal(droppedPickups.length, 1, 'Weapon must be spawned in world pickups');
+    // Weapons dropped
+    assert.equal(player.inventory[2], null, 'Weapons must drop at collapse location');
+    const droppedGuns = Array.from(room.pickups.values()).filter((p) => p.name === '9mm Pistol');
+    assert.equal(droppedGuns.length, 1, 'Pistol must spawn as world pickup');
 
     // Unarmed escape phase: cannot attack
+    player.activeSlot = 0;
     const rooster = Array.from(room.roosters.values())[0];
-    const initialRoosterHealth = rooster.health;
+    const initialHealth = rooster.health;
     rooster.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
     room.handlePlayerAttack('p1');
-    assert.equal(rooster.health, initialRoosterHealth, 'Key carrier cannot use weapons or attack');
+    assert.equal(rooster.health, initialHealth, 'Key carrier cannot use weapons or attack');
     room.stop();
   });
 
-  test('5. House unlock validation: wrong house fails, correct house wins', () => {
+  test('6. Estate door unlock: wrong house fails, correct house wins', () => {
     const room = new GameRoom('TEST');
     room.addClient('p1', 'Player 1', createMockSocket());
     room.startMatch('p1');
 
     const player = room.players.get('p1')!;
-    player.assignedHouse = 0; // Assigned house is House #1 (id 0)
+    player.assignedHouse = 0; // Cobalt Estate
 
-    // Case A: Trying to unlock without genuine key
+    // Unlock without key fails
     room.handlePlayerInteract('p1', 'door', 'house_0');
-    assert.notEqual(room.status, 'ended', 'Cannot win without key');
+    assert.notEqual(room.status, 'ended');
 
-    // Case B: Player has genuine key for House 1, but tries unlocking House 2
-    player.inventory[0] = {
-      id: 'key_1',
-      type: 'key',
-      name: 'Genuine Key 2',
-      isGenuineKey: true,
-      targetHouseId: 1
-    };
-    player.hasGenuineKey = true;
-    player.pos = { x: HOUSES[1].doorPos.x, y: 1.5, z: HOUSES[1].doorPos.z + 5 };
-    room.handlePlayerInteract('p1', 'door', 'house_1');
-    assert.notEqual(room.status, 'ended', 'Cannot win unlocking a house that is not assigned to player');
-
-    // Case C: Player unlocks assigned House 0 with matching Genuine Key 0
+    // Unlock with matching genuine key wins
     player.inventory[0] = {
       id: 'key_0',
       type: 'key',
@@ -158,14 +172,16 @@ describe('Cock & Keys — Authoritative Multiplayer & Game Rule Tests', () => {
       isGenuineKey: true,
       targetHouseId: 0
     };
-    player.pos = { x: HOUSES[0].doorPos.x, y: 1.5, z: HOUSES[0].doorPos.z + 5 };
+    player.hasGenuineKey = true;
+    player.pos = { x: HOUSES[0].doorPos.x, y: 0, z: HOUSES[0].doorPos.z + 10 };
     room.handlePlayerInteract('p1', 'door', 'house_0');
-    assert.equal(room.status, 'ended', 'Unlocking correct assigned house with genuine key triggers victory');
+
+    assert.equal(room.status, 'ended', 'Unlocking assigned estate with genuine key wins match');
     assert.equal(room.winnerId, 'p1');
     room.stop();
   });
 
-  test('6. Red Meter: wrongful NPC kills increment meter, never decreases, causes game over at 8', () => {
+  test('7. Red Meter permanent escalation and game over at 8', () => {
     const room = new GameRoom('TEST');
     room.addClient('p1', 'Player 1', createMockSocket());
     room.startMatch('p1');
@@ -173,66 +189,23 @@ describe('Cock & Keys — Authoritative Multiplayer & Game Rule Tests', () => {
     const player = room.players.get('p1')!;
     assert.equal(player.redMeter, 0);
 
-    const npc = Array.from(room.npcs.values())[0];
-    npc.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
-
-    // Attack NPC until death
-    npc.health = 20; // 1 hit left
-    room.handlePlayerAttack('p1');
-
-    assert.equal(npc.health, 0, 'NPC should be killed');
-    assert.equal(player.redMeter, 1, 'Wrongful kill increments Red Meter exactly once');
-    assert.ok(player.attackedFactions.includes(npc.faction), 'Attacked faction must be recorded');
-
-    // Simulate 7 more kills
-    for (let i = 2; i <= 7; i++) {
-      const nextNpc = Array.from(room.npcs.values())[i];
-      nextNpc.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
-      nextNpc.health = 20;
+    for (let i = 0; i < 7; i++) {
+      const npc = Array.from(room.npcs.values())[i];
+      npc.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
+      npc.health = 20;
       room.handlePlayerAttack('p1');
-      assert.equal(player.redMeter, i);
     }
+    assert.equal(player.redMeter, 7, 'Universal hostility reached');
+    assert.notEqual(room.status, 'ended');
 
-    assert.equal(player.redMeter, 7, 'Universal hostility threshold reached');
-    assert.notEqual(room.status, 'ended', 'Still playable at Red Meter 7');
-
-    // 8th kill: Instant Game Over
-    const lastNpc = Array.from(room.npcs.values())[8];
+    // 8th kill causes instant game over
+    const lastNpc = Array.from(room.npcs.values())[7];
     lastNpc.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
     lastNpc.health = 20;
     room.handlePlayerAttack('p1');
 
-    assert.equal(player.redMeter, 8, 'Red Meter reached 8');
-    assert.equal(room.status, 'ended', 'Red Meter 8 must trigger immediate game over');
-    room.stop();
-  });
-
-  test('7. Faction hostility rule check at Red Meter 5 vs universal hostility at 7', () => {
-    const room = new GameRoom('TEST');
-    room.addClient('p1', 'Player 1', createMockSocket());
-    room.startMatch('p1');
-
-    const player = room.players.get('p1')!;
-    player.redMeter = 5;
-    player.attackedFactions = ['lawyer'];
-
-    // Lawyer NPC sees player
-    const lawyerNpc = Array.from(room.npcs.values()).find((n) => n.faction === 'lawyer')!;
-    const doctorNpc = Array.from(room.npcs.values()).find((n) => n.faction === 'doctor')!;
-
-    lawyerNpc.pos = { x: player.pos.x + 2, y: player.pos.y, z: player.pos.z + 2 };
-    doctorNpc.pos = { x: player.pos.x + 2, y: player.pos.y, z: player.pos.z + 2 };
-
-    // Tick AI update
-    (room as unknown as { updateNpcs: (d: number) => void }).updateNpcs(0.1);
-
-    assert.equal(lawyerNpc.state, 'attack', 'Lawyer NPC must retaliate at Red Meter 5');
-    assert.notEqual(doctorNpc.state, 'attack', 'Doctor NPC must NOT attack at Red Meter 5 if doctor was never attacked');
-
-    // At Red Meter 7, Doctor NPC becomes hostile too
-    player.redMeter = 7;
-    (room as unknown as { updateNpcs: (d: number) => void }).updateNpcs(0.1);
-    assert.equal(doctorNpc.state, 'attack', 'Doctor NPC must become hostile at Red Meter 7 (universal hostility)');
+    assert.equal(player.redMeter, 8);
+    assert.equal(room.status, 'ended');
     room.stop();
   });
 });

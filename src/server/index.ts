@@ -152,7 +152,7 @@ wss.on('connection', (ws: WebSocket) => {
           if (!mapping) return;
           const room = rooms.get(mapping.roomCode);
           if (room) {
-            room.handlePlayerInput(mapping.clientId, msg.pos, msg.yaw, msg.pitch, msg.isMoving, msg.isSprinting);
+            room.handlePlayerInput(mapping.clientId, msg.pos, msg.yaw, msg.pitch, msg.isMoving, msg.isSprinting, msg.isCrouching, msg.isAiming);
           }
           break;
         }
@@ -162,7 +162,37 @@ wss.on('connection', (ws: WebSocket) => {
           if (!mapping) return;
           const room = rooms.get(mapping.roomCode);
           if (room) {
-            room.handlePlayerAttack(mapping.clientId);
+            room.handlePlayerAttack(mapping.clientId, msg.aimOrigin, msg.aimDirection);
+          }
+          break;
+        }
+
+        case 'player_reload': {
+          const mapping = clientToRoom.get(ws);
+          if (!mapping) return;
+          const room = rooms.get(mapping.roomCode);
+          if (room) {
+            room.handlePlayerReload(mapping.clientId);
+          }
+          break;
+        }
+
+        case 'drop_item': {
+          const mapping = clientToRoom.get(ws);
+          if (!mapping) return;
+          const room = rooms.get(mapping.roomCode);
+          if (room) {
+            room.handleDropItem(mapping.clientId, msg.slotIndex);
+          }
+          break;
+        }
+
+        case 'select_slot': {
+          const mapping = clientToRoom.get(ws);
+          if (!mapping) return;
+          const room = rooms.get(mapping.roomCode);
+          if (room) {
+            room.handleSelectSlot(mapping.clientId, msg.slotIndex);
           }
           break;
         }

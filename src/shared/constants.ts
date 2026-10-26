@@ -1,69 +1,79 @@
 import type { HouseDefinition, NpcFaction, PlayerRole } from './types.ts';
 
-export const TOWN_SIZE = 120; // 120x120 meters town
-export const TOWN_WALL_HEIGHT = 6;
+// Big Map Dimensions: 260x260 meters town with multiple districts and ambush alleys
+export const TOWN_SIZE = 260;
+export const TOWN_WALL_HEIGHT = 8;
 
 export const TICK_RATE = 20; // 20 ticks per second (50ms interval)
 export const MATCH_DURATION_SECONDS = 8 * 60; // 8 minutes
 
-export const PLAYER_WALK_SPEED = 5.0;
+// Movement Speeds
+export const PLAYER_WALK_SPEED = 4.8;
 export const PLAYER_SPRINT_SPEED = 8.5;
-export const ROOSTER_WALK_SPEED = 4.2;
-export const ROOSTER_FLEE_SPEED = 8.0;
-export const NPC_WALK_SPEED = 2.8;
+export const PLAYER_CROUCH_SPEED = 2.4;
+export const ROOSTER_WALK_SPEED = 4.0;
+export const ROOSTER_FLEE_SPEED = 9.0;
+export const NPC_WALK_SPEED = 2.6;
+export const NPC_RUN_SPEED = 7.5;
 
-export const INTERACTION_DISTANCE = 3.0;
-export const MELEE_ATTACK_DISTANCE = 2.2;
-export const MELEE_DAMAGE = 25;
+// Combat & Weapons
+export const INTERACTION_DISTANCE = 4.2;
+
+export const WEAPON_STATS = {
+  fists: { damage: 15, range: 2.2, cooldown: 0.4 },
+  knife: { damage: 40, backstabDamage: 85, range: 2.4, cooldown: 0.35 },
+  pistol: { damage: 35, headshotMultiplier: 1.8, range: 65, magSize: 12, reloadTime: 1.8, fireRate: 0.25 }
+};
 
 export const PLAYER_ROLES: PlayerRole[] = ['pedestrian', 'waiter', 'doctor', 'lawyer'];
 export const NPC_FACTIONS: NpcFaction[] = ['pedestrian', 'waiter', 'doctor', 'lawyer', 'guard', 'merchant'];
 
-// 4 Distinct Player Houses placed at key sectors of the town
+// 4 Distinct Player Estates/Manors in the 4 corners of the large city
 export const HOUSES: HouseDefinition[] = [
   {
     id: 0,
-    name: 'Cobalt Cottage (House #1)',
-    doorPos: { x: -36, y: 1.0, z: -36 },
-    colorHex: 0x3a86ff, // Blue
-    landmarkNear: 'Ancient Oak Tree',
-    riddleClue: 'Beneath the ancient oak whose branches point northwest, stands the azure door where weary roosters rest.'
+    name: 'Cobalt Estate (House #1)',
+    doorPos: { x: -80, y: 1.0, z: -80 },
+    colorHex: 0x1d4ed8, // Royal Blue
+    landmarkNear: 'Ancient Oak Park & Conservatory',
+    riddleClue: 'Beneath the ancient botanical oak whose branches sweep northwest, find the azure estate where the roosters rest.'
   },
   {
     id: 1,
     name: 'Crimson Manor (House #2)',
-    doorPos: { x: 36, y: 1.0, z: -36 },
-    colorHex: 0xe63946, // Red
-    landmarkNear: 'Town Clocktower',
-    riddleClue: 'Where the grand clocktower casts its eastward midday shadow, seek the ruby door overlooking the square.'
+    doorPos: { x: 80, y: 1.0, z: -80 },
+    colorHex: 0xb91c1c, // Deep Red
+    landmarkNear: 'Grand Cathedral Clocktower',
+    riddleClue: 'Where the grand cathedral clocktower casts its eastward midday shadow, seek the ruby manor overlooking the plaza.'
   },
   {
     id: 2,
     name: 'Emerald Villa (House #3)',
-    doorPos: { x: -36, y: 1.0, z: 36 },
-    colorHex: 0x2a9d8f, // Green
-    landmarkNear: 'Central Marble Fountain',
-    riddleClue: 'Southwest of the splashing marble fountain, an emerald doorway greets the evening breeze.'
+    doorPos: { x: -80, y: 1.0, z: 80 },
+    colorHex: 0x047857, // Deep Emerald
+    landmarkNear: 'Central Grand Promenade Fountain',
+    riddleClue: 'Southwest of the grand tiered promenade fountain, an emerald villa doorway greets the evening breeze.'
   },
   {
     id: 3,
     name: 'Amber Lodge (House #4)',
-    doorPos: { x: 36, y: 1.0, z: 36 },
-    colorHex: 0xf4a261, // Amber/Orange
-    landmarkNear: 'Bronze Rooster Monument',
-    riddleClue: 'Directly in the gaze of the grand Bronze Rooster monument, your golden home awaits its master.'
+    doorPos: { x: 80, y: 1.0, z: 80 },
+    colorHex: 0xb45309, // Rich Amber
+    landmarkNear: 'Colossal Bronze Rooster Monument',
+    riddleClue: 'Directly in the piercing gaze of the colossal Bronze Rooster monument, your golden lodge awaits its master.'
   }
 ];
 
-// Major Town Landmarks
+// Major City Landmarks
 export const LANDMARKS = [
-  { name: 'Clocktower', pos: { x: 0, y: 0, z: -10 }, size: { w: 6, h: 22, d: 6 }, color: 0x8d99ae },
-  { name: 'Central Fountain', pos: { x: 0, y: 0, z: 10 }, size: { w: 8, h: 2, d: 8 }, color: 0x48cae4 },
-  { name: 'Ancient Oak Tree', pos: { x: -25, y: 0, z: -25 }, size: { w: 4, h: 10, d: 4 }, color: 0x2b9348 },
-  { name: 'Bronze Rooster Monument', pos: { x: 25, y: 0, z: 25 }, size: { w: 3, h: 5, d: 3 }, color: 0xd4a373 },
-  { name: 'Courthouse', pos: { x: 35, y: 0, z: 0 }, size: { w: 18, h: 9, d: 14 }, color: 0xd9dcd6 },
-  { name: 'Hospital', pos: { x: -35, y: 0, z: 0 }, size: { w: 18, h: 9, d: 14 }, color: 0xf8f9fa },
-  { name: 'Restaurant', pos: { x: 0, y: 0, z: -40 }, size: { w: 16, h: 8, d: 12 }, color: 0xbc6c25 }
+  { name: 'Cathedral Clocktower', pos: { x: 0, y: 0, z: -25 }, size: { w: 10, h: 36, d: 10 }, color: 0x64748b },
+  { name: 'Grand Promenade Fountain', pos: { x: 0, y: 0, z: 25 }, size: { w: 16, h: 3.5, d: 16 }, color: 0x0284c7 },
+  { name: 'Ancient Oak Park', pos: { x: -50, y: 0, z: -50 }, size: { w: 8, h: 16, d: 8 }, color: 0x15803d },
+  { name: 'Bronze Rooster Monument', pos: { x: 50, y: 0, z: 50 }, size: { w: 6, h: 10, d: 6 }, color: 0xd97706 },
+  { name: 'City Hall & Courthouse', pos: { x: 75, y: 0, z: 0 }, size: { w: 32, h: 14, d: 24 }, color: 0xe2e8f0 },
+  { name: 'Central Hospital', pos: { x: -75, y: 0, z: 0 }, size: { w: 34, h: 16, d: 24 }, color: 0xf8fafc },
+  { name: 'Le Grand Bistro Restaurant', pos: { x: 0, y: 0, z: -75 }, size: { w: 28, h: 10, d: 20 }, color: 0x78350f },
+  { name: 'Police Headquarters', pos: { x: 0, y: 0, z: 75 }, size: { w: 26, h: 12, d: 20 }, color: 0x1e293b }
 ];
 
 export const RED_METER_THRESHOLDS = {

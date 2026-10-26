@@ -1,4 +1,4 @@
-import { ClientMessage, GameSnapshot, PlayerRole, ServerMessage } from '../shared/types.ts';
+import { ClientMessage, GameSnapshot, PlayerRole, ServerMessage, Vector3D } from '../shared/types.ts';
 
 export class NetworkClient {
   private ws: WebSocket | null = null;
@@ -15,6 +15,7 @@ export class NetworkClient {
   public onSnapshot?: (snapshot: GameSnapshot) => void;
   public onCollapseEvent?: (riddle: string) => void;
   public onRedMeterAlert?: (level: number, message: string) => void;
+  public onGunshotEvent?: (shooterId: string, pos: Vector3D) => void;
   public onMatchOver?: (winnerId: string, winnerName: string, reason: string) => void;
   public onError?: (msg: string) => void;
   public onConnected?: () => void;
@@ -29,10 +30,8 @@ export class NetworkClient {
         return;
       }
 
-      // Default to current host port 3000 if not specified
       if (!url) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // In local development Vite runs on 5173 and server on 3000
         const host = window.location.hostname;
         const port = window.location.port === '5173' ? '3000' : (window.location.port ? window.location.port : (protocol === 'wss:' ? '443' : '80'));
         url = `${protocol}//${host}:${port}`;
@@ -103,6 +102,10 @@ export class NetworkClient {
           if (this.onRedMeterAlert) this.onRedMeterAlert(msg.level, msg.message);
           break;
 
+        case 'gunshot_event':
+          if (this.onGunshotEvent) this.onGunshotEvent(msg.shooterId, msg.pos);
+          break;
+
         case 'match_over':
           if (this.onMatchOver) this.onMatchOver(msg.winnerId, msg.winnerName, msg.reason);
           break;
@@ -130,19 +133,33 @@ export class NetworkClient {
     this.send({ type: 'start_match' });
   }
 
-  public sendInput(pos: { x: number; y: number; z: number }, yaw: number, pitch: number, isMoving: boolean, isSprinting: boolean) {
+  public sendInput(pos: Vector3D, yaw: number, pitch: number, isMoving: boolean, isSprinting: boolean, isCrouching: boolean, isAiming: boolean) {
     this.send({
       type: 'player_input',
       pos,
       yaw,
       pitch,
       isMoving,
-      isSprinting
+      isSprinting,
+      isCrouching,
+      isAiming
     });
   }
 
-  public sendAttack() {
-    this.send({ type: 'player_attack' });
+  public sendAttack(aimOrigin?: Vector3D, aimDirection?: Vector3D) {
+    this.send({ type: 'player_attack', aimOrigin, aimDirection });
+  }
+
+  public sendReload() {
+    this.send({ type: 'player_reload' });
+  }
+
+  public sendDropItem(slotIndex: number) {
+    this.send({ type: 'drop_item', slotIndex });
+  }
+
+  public sendSelectSlot(slotIndex: number) {
+    this.send({ type: 'select_slot', slotIndex });
   }
 
   public sendInteract(targetType: 'pickup' | 'door', targetId: string) {
