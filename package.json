@@ -1,0 +1,27 @@
+{
+  "name": "cock-and-keys",
+  "version": "1.0.0",
+  "description": "Cock & Keys - 3D First-Person Multiplayer Browser Game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:client": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "pnpm run build:client && pnpm run build:server",
+    "server": "node --experimental-strip-types src/server/index.ts",
+    "server:prod": "node dist/server/index.js",
+    "start": "node --experimental-strip-types src/server/index.ts",
+    "test": "node --experimental-strip-types --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
