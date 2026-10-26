@@ -4,6 +4,7 @@ import {
   INTERACTION_DISTANCE,
   MATCH_DURATION_SECONDS,
   NPC_FACTIONS,
+  NPC_RUN_SPEED,
   NPC_WALK_SPEED,
   PLAYER_ROLES,
   RED_METER_THRESHOLDS,
@@ -52,7 +53,8 @@ export class GameRoom {
   public pickups: Map<string, WorldPickup> = new Map();
   public recentBulletTraces: BulletTrace[] = [];
 
-  // Rooster erratic timers
+  // NPC group metadata: pair partner IDs, waypoint targets
+  private npcTargets: Map<string, { x: number; z: number }> = new Map();
   private roosterTwitchTimers: Map<string, number> = new Map();
 
   // Match timing
@@ -192,7 +194,7 @@ export class GameRoom {
       });
     });
 
-    // 2. Initialize 8 Roosters and 8 Keys across the large map
+    // 2. Initialize 8 Roosters and 8 Keys across the town
     this.roosters.clear();
     this.keys.clear();
     this.pickups.clear();
@@ -214,11 +216,10 @@ export class GameRoom {
       this.keys.set(keyId, keyState);
 
       const angle = (i / 8) * Math.PI * 2;
-      const dist = 35 + (i % 3) * 18;
+      const dist = 32 + (i % 3) * 18;
       let rx = Math.cos(angle) * dist;
       let rz = Math.sin(angle) * dist;
 
-      // Ensure roosters never spawn inside buildings or obstacles
       if (checkObstacleCollision(rx, rz, 0.6)) {
         rx += 4;
         rz += 4;
@@ -237,22 +238,66 @@ export class GameRoom {
       this.roosterTwitchTimers.set(roosterState.id, Math.random() * 1.5);
     }
 
-    // 3. Populate Crowds with 40 Active Moving NPCs
+    // 3. Populate 40 NPCs in Real City Sets: Pairs, Conversational Circles, Runners, Sitters
     this.npcs.clear();
-    const activities: NpcActivity[] = ['walk', 'patrol', 'chat', 'walk'];
+    this.npcTargets.clear();
 
     for (let i = 0; i < 40; i++) {
       const faction = NPC_FACTIONS[i % NPC_FACTIONS.length];
-      const activity = activities[i % activities.length];
+      let activity: NpcActivity = 'walk';
+      let nx = 0;
+      let nz = 0;
+      let yaw = Math.random() * Math.PI * 2;
 
-      const angle = (i / 40) * Math.PI * 2 + 0.15;
-      const dist = 16 + (i % 6) * 15;
-      let nx = Math.cos(angle) * dist;
-      let nz = Math.sin(angle) * dist;
+      if (i < 12) {
+        // Pairs / Duos walking side by side
+        const pairIndex = Math.floor(i / 2);
+        const isSecondOfPair = (i % 2 === 1);
+        const avenueCoord = -60 + pairIndex * 24;
+        nx = isSecondOfPair ? 10.5 : 8.5; // Walking down the eastern sidewalk
+        nz = avenueCoord;
+        activity = 'walk';
+        yaw = 0; // Walking south
+        this.npcTargets.set(`npc_${i}`, { x: nx, z: 80 });
+      } else if (i < 20) {
+        // Conversational circles in Central Plaza and outside Bistro
+        const circleGroup = i < 16 ? 0 : 1;
+        const center = circleGroup === 0 ? { x: 0, z: 12 } : { x: 0, z: -62 };
+        const circleAngle = ((i % 4) / 4) * Math.PI * 2;
+        nx = center.x + Math.cos(circleAngle) * 2.2;
+        nz = center.y + Math.sin(circleAngle) * 2.2;
+        yaw = circleAngle + Math.PI; // Facing inward to talk
+        activity = 'chat';
+      } else if (i < 26) {
+        // Sitting citizens on park benches
+        const benchSpots = [
+          { x: -12, z: 20 }, { x: 12, z: 20 },
+          { x: -12, z: 30 }, { x: 12, z: 30 },
+          { x: -45, z: -45 }, { x: 45, z: 45 }
+        ];
+        const spot = benchSpots[i - 20];
+        nx = spot.x;
+        nz = spot.z;
+        activity = 'sit';
+      } else if (i < 30) {
+        // Athletic Joggers / Runners
+        const runnerOffset = (i - 26) * 30;
+        nx = -9.5;
+        nz = -40 + runnerOffset;
+        activity = 'patrol'; // Runs fast
+        this.npcTargets.set(`npc_${i}`, { x: -9.5, z: 90 });
+      } else {
+        // Purposeful solo walkers traversing town
+        const angle = ((i - 30) / 10) * Math.PI * 2;
+        nx = Math.cos(angle) * 45;
+        nz = Math.sin(angle) * 45;
+        activity = 'walk';
+        this.npcTargets.set(`npc_${i}`, { x: -nx, z: -nz });
+      }
 
       if (checkObstacleCollision(nx, nz, 0.6)) {
-        nx += 3;
-        nz += 3;
+        nx += 2;
+        nz += 2;
       }
 
       const npc: NpcState = {
@@ -260,46 +305,61 @@ export class GameRoom {
         faction,
         name: `${faction.charAt(0).toUpperCase() + faction.slice(1)} ${i + 1}`,
         pos: { x: nx, y: 0, z: nz },
-        yaw: Math.random() * Math.PI * 2,
+        yaw,
         health: 80,
         maxHealth: 80,
-        state: 'patrol',
+        state: activity === 'sit' ? 'sitting' : (activity === 'chat' ? 'chatting' : 'patrol'),
         activity,
         targetPlayerId: null
       };
       this.npcs.set(npc.id, npc);
     }
 
-    // 4. Spawn Weapons INSIDE Different Buildings
-    this.spawnWeaponsInsideBuildings();
+    // 4. Distribute Weapons Everywhere Across the Town
+    this.spawnWeaponsEverywhere();
 
-    // Start 20Hz Tick
     this.startTick();
     return true;
   }
 
-  private spawnWeaponsInsideBuildings() {
-    // Weapons and loot placed strictly inside the enterable buildings and ambush caches
+  private spawnWeaponsEverywhere() {
     const weaponSpots: { type: ItemType; name: string; ammo?: number; pos: Vector3D }[] = [
       // 1. Inside Le Grand Bistro Restaurant (0, -75)
-      { type: 'pistol', name: '9mm Semi-Auto Pistol', ammo: 12, pos: { x: 0, y: 0.8, z: -82 } }, // On the bar counter
-      { type: 'knife', name: 'Chefs Combat Knife', pos: { x: -6, y: 0.8, z: -82 } }, // On kitchen counter
+      { type: 'pistol', name: '9mm Semi-Auto Pistol', ammo: 12, pos: { x: 0, y: 0.8, z: -82 } },
+      { type: 'knife', name: 'Chef Combat Knife', pos: { x: -6, y: 0.8, z: -82 } },
+      { type: 'knife', name: 'Steak Knife', pos: { x: 7, y: 0.8, z: -77 } },
 
       // 2. Inside Central Hospital (-75, 0)
-      { type: 'bandage', name: 'Military Medical Kit', pos: { x: -80, y: 0.8, z: 6 } }, // On hospital bed
-      { type: 'knife', name: 'Serrated Scalpel Knife', pos: { x: -85, y: 0.8, z: -6 } }, // In medical supply room
-      { type: 'bandage', name: 'Trauma First Aid Kit', pos: { x: -65, y: 0.8, z: 0 } }, // On reception desk
+      { type: 'bandage', name: 'Military Medical Kit', pos: { x: -80, y: 0.8, z: 6 } },
+      { type: 'knife', name: 'Serrated Scalpel Knife', pos: { x: -85, y: 0.8, z: -6 } },
+      { type: 'bandage', name: 'Trauma First Aid Kit', pos: { x: -65, y: 0.8, z: 0 } },
 
-      // 3. Inside Police Headquarters & Courthouse (0, 75)
-      { type: 'pistol', name: '9mm Tactical Police Pistol', ammo: 12, pos: { x: 0, y: 0.8, z: 83 } }, // In evidence locker
-      { type: 'bandage', name: 'Field Medical Kit', pos: { x: 2, y: 0.8, z: 72 } }, // On sergeant's desk
+      // 3. Inside Police HQ & Courthouse (0, 75)
+      { type: 'pistol', name: '9mm Tactical Police Pistol', ammo: 12, pos: { x: 0, y: 0.8, z: 83 } },
+      { type: 'bandage', name: 'Police Medical Pack', pos: { x: 2, y: 0.8, z: 72 } },
+      { type: 'pistol', name: 'Officer Backup Handgun', ammo: 12, pos: { x: -4, y: 0.8, z: 83 } },
 
       // 4. Inside City Hall & Bank (75, 0)
-      { type: 'pistol', name: '9mm Vault Pistol', ammo: 12, pos: { x: 78, y: 0.8, z: 0 } }, // Behind teller counter
+      { type: 'pistol', name: '9mm Vault Pistol', ammo: 12, pos: { x: 78, y: 0.8, z: 0 } },
+      { type: 'knife', name: 'Bank Guard Dagger', pos: { x: 84, y: 0.8, z: 6 } },
 
-      // 5. In Ambush Alley Caches
-      { type: 'knife', name: 'Trench Ambush Knife', pos: { x: -35, y: 0.4, z: -30 } }, // Hidden by dumpster
-      { type: 'knife', name: 'Stiletto Combat Knife', pos: { x: 35, y: 0.4, z: 30 } }
+      // 5. On the 4 Player Estate Porches & Grounds
+      { type: 'pistol', name: 'Cobalt Estate Handgun', ammo: 12, pos: { x: -80, y: 0.4, z: -73 } },
+      { type: 'knife', name: 'Crimson Manor Dirk', pos: { x: 80, y: 0.4, z: -73 } },
+      { type: 'knife', name: 'Emerald Hunting Knife', pos: { x: -80, y: 0.4, z: 87 } },
+      { type: 'pistol', name: 'Amber Lodge Pistol', ammo: 12, pos: { x: 80, y: 0.4, z: 87 } },
+
+      // 6. Central Plaza & Promenade
+      { type: 'pistol', name: 'Fountain Stash Pistol', ammo: 12, pos: { x: 0, y: 0.4, z: 18 } },
+      { type: 'bandage', name: 'Park First Aid Kit', pos: { x: -12, y: 0.6, z: 20 } },
+      { type: 'knife', name: 'Bronze Monument Trench Knife', pos: { x: 50, y: 0.4, z: 46 } },
+      { type: 'bandage', name: 'Cathedral Medical Pack', pos: { x: 0, y: 0.4, z: -20 } },
+
+      // 7. Ambush Alleys & Slums
+      { type: 'knife', name: 'Northwest Alley Shiv', pos: { x: -35, y: 0.4, z: -30 } },
+      { type: 'pistol', name: 'Underworld Alley Pistol', ammo: 12, pos: { x: 35, y: 0.4, z: -30 } },
+      { type: 'knife', name: 'Southwest Alley Stiletto', pos: { x: -35, y: 0.4, z: 40 } },
+      { type: 'knife', name: 'Southeast Ambush Blade', pos: { x: 35, y: 0.4, z: 40 } }
     ];
 
     weaponSpots.forEach((spot, idx) => {
@@ -354,7 +414,6 @@ export class GameRoom {
       }
     }
 
-    // AI Updates
     this.updateRoosters(delta);
     this.updateNpcs(delta);
 
@@ -384,11 +443,9 @@ export class GameRoom {
         }
       }
 
-      // Erratic Twitch Timer (Roosters suddenly change angles unpredictably)
       let twitchTimer = (this.roosterTwitchTimers.get(rooster.id) || 1.0) - delta;
       if (twitchTimer <= 0) {
-        twitchTimer = 0.6 + Math.random() * 1.4;
-        // Sudden unpredictable angle jump
+        twitchTimer = 0.5 + Math.random() * 1.2;
         rooster.yaw += (Math.random() - 0.5) * 2.8;
       }
       this.roosterTwitchTimers.set(rooster.id, twitchTimer);
@@ -397,20 +454,16 @@ export class GameRoom {
       let moveZ = 0;
 
       if (nearestDist < 8.0) {
-        // Frantic zig-zag fleeing
         const zigZagAngle = Math.sin(Date.now() * 0.008) * 0.7;
         const finalFleeAngle = Math.atan2(fleeDirX, fleeDirZ) + zigZagAngle;
         moveX = Math.sin(finalFleeAngle) * speed * delta;
         moveZ = Math.cos(finalFleeAngle) * speed * delta;
         rooster.yaw = finalFleeAngle;
       } else {
-        // Completely unpredictable organic wander
         moveX = -Math.sin(rooster.yaw) * ROOSTER_WALK_SPEED * delta;
         moveZ = -Math.cos(rooster.yaw) * ROOSTER_WALK_SPEED * delta;
       }
 
-      // ROOSTER OBSTACLE COLLISION CHECK:
-      // Chickens can NEVER pass through walls or obstacles!
       const testX = rooster.pos.x + moveX;
       const testZ = rooster.pos.z + moveZ;
 
@@ -418,11 +471,9 @@ export class GameRoom {
         rooster.pos.x = testX;
         rooster.pos.z = testZ;
       } else {
-        // Obstacle hit: Bounce off and pick a completely new random direction!
         rooster.yaw = Math.random() * Math.PI * 2;
       }
 
-      // Perimeter Bounds
       const half = TOWN_SIZE / 2 - 6;
       rooster.pos.x = Math.max(-half, Math.min(half, rooster.pos.x));
       rooster.pos.z = Math.max(-half, Math.min(half, rooster.pos.z));
@@ -453,7 +504,6 @@ export class GameRoom {
       }
 
       if (targetPlayer) {
-        // Hostile chase
         npc.state = 'attack';
         npc.targetPlayerId = targetPlayer.id;
 
@@ -477,23 +527,52 @@ export class GameRoom {
           }
         }
       } else {
-        // Continuous Natural Street Patrol & Wander
-        npc.state = 'patrol';
-        // Gentle turning
-        npc.yaw += (Math.random() - 0.5) * 1.2 * delta;
-
-        const moveX = -Math.sin(npc.yaw) * NPC_WALK_SPEED * delta;
-        const moveZ = -Math.cos(npc.yaw) * NPC_WALK_SPEED * delta;
-
-        const testX = npc.pos.x + moveX;
-        const testZ = npc.pos.z + moveZ;
-
-        if (!checkObstacleCollision(testX, testZ, 0.45)) {
-          npc.pos.x = testX;
-          npc.pos.z = testZ;
+        // Purposeful Activity Updates
+        if (npc.activity === 'sit') {
+          npc.state = 'sitting';
+        } else if (npc.activity === 'chat') {
+          npc.state = 'chatting';
+          npc.yaw += Math.sin(Date.now() * 0.002) * 0.015;
         } else {
-          // Turn around when reaching building wall or corner
-          npc.yaw += Math.PI * 0.75;
+          // Walkers & Runners
+          const isRunner = (npc.id.endsWith('6') || npc.id.endsWith('7') || npc.id.endsWith('8') || npc.id.endsWith('9')) && npc.activity === 'patrol';
+          const speed = isRunner ? NPC_RUN_SPEED : NPC_WALK_SPEED;
+          npc.state = 'patrol';
+
+          const target = this.npcTargets.get(npc.id);
+          if (target) {
+            const tdx = target.x - npc.pos.x;
+            const tdz = target.z - npc.pos.z;
+            const tdist = Math.sqrt(tdx * tdx + tdz * tdz);
+
+            if (tdist > 2.0) {
+              npc.yaw = Math.atan2(tdx, tdz) - Math.PI;
+              const moveX = (tdx / tdist) * speed * delta;
+              const moveZ = (tdz / tdist) * speed * delta;
+
+              if (!checkObstacleCollision(npc.pos.x + moveX, npc.pos.z + moveZ, 0.45)) {
+                npc.pos.x += moveX;
+                npc.pos.z += moveZ;
+              } else {
+                this.npcTargets.set(npc.id, { x: -target.x, z: -target.z });
+              }
+            } else {
+              // Reached waypoint: pick opposite route
+              this.npcTargets.set(npc.id, { x: -target.x, z: -target.z });
+            }
+          } else {
+            // General patrol
+            npc.yaw += (Math.random() - 0.5) * 1.0 * delta;
+            const moveX = -Math.sin(npc.yaw) * speed * delta;
+            const moveZ = -Math.cos(npc.yaw) * speed * delta;
+
+            if (!checkObstacleCollision(npc.pos.x + moveX, npc.pos.z + moveZ, 0.45)) {
+              npc.pos.x += moveX;
+              npc.pos.z += moveZ;
+            } else {
+              npc.yaw += Math.PI * 0.75;
+            }
+          }
         }
       }
 
@@ -556,7 +635,6 @@ export class GameRoom {
         z: origin.z + ndz * WEAPON_STATS.pistol.range
       };
 
-      // 1. Roosters
       for (const rooster of this.roosters.values()) {
         if (rooster.isKnockedOut) continue;
         const dx = rooster.pos.x - origin.x;
@@ -580,7 +658,6 @@ export class GameRoom {
         }
       }
 
-      // 2. NPCs
       if (!hitSomething) {
         for (const npc of this.npcs.values()) {
           if (npc.health <= 0) continue;
@@ -605,7 +682,6 @@ export class GameRoom {
         }
       }
 
-      // 3. Other Players
       if (!hitSomething) {
         for (const other of this.players.values()) {
           if (other.id === player.id || other.isKnockedOut) continue;
@@ -640,11 +716,9 @@ export class GameRoom {
       return;
     }
 
-    // Melee (Knife or Fists)
     const reach = (weaponType === 'knife') ? WEAPON_STATS.knife.range : WEAPON_STATS.fists.range;
     let baseDamage = (weaponType === 'knife') ? WEAPON_STATS.knife.damage : WEAPON_STATS.fists.damage;
 
-    // Check Roosters
     for (const rooster of this.roosters.values()) {
       if (rooster.isKnockedOut) continue;
       const dx = rooster.pos.x - player.pos.x;
@@ -662,7 +736,6 @@ export class GameRoom {
       }
     }
 
-    // Check NPCs
     for (const npc of this.npcs.values()) {
       if (npc.health <= 0) continue;
       const dx = npc.pos.x - player.pos.x;
@@ -684,7 +757,6 @@ export class GameRoom {
       }
     }
 
-    // Check other players
     for (const other of this.players.values()) {
       if (other.id === player.id || other.isKnockedOut) continue;
       const dx = other.pos.x - player.pos.x;
@@ -782,7 +854,6 @@ export class GameRoom {
           key.carriedByPlayerId = player.id;
 
           if (key.isGenuine) {
-            // GENUINE-KEY AMNESIA SEQUENCE
             player.hasGenuineKey = true;
             player.hasMemoryLoss = true;
             player.isSmiling = true;
@@ -807,7 +878,6 @@ export class GameRoom {
               riddle: player.riddle
             });
           } else {
-            // Decoy key: continue hunting
             player.inventory[3] = {
               id: key.id,
               type: 'key',
@@ -818,7 +888,6 @@ export class GameRoom {
             };
           }
         } else {
-          // Weapon / Ammo pickup
           for (let i = 1; i < player.inventory.length; i++) {
             if (!player.inventory[i]) {
               player.inventory[i] = {

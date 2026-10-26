@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { checkObstacleCollision, HOUSES, INTERACTION_DISTANCE, NPC_WALK_SPEED, ROOSTER_WALK_SPEED, WEAPON_STATS } from '../shared/constants.ts';
+import { checkObstacleCollision, HOUSES, INTERACTION_DISTANCE, NPC_RUN_SPEED, NPC_WALK_SPEED, ROOSTER_WALK_SPEED, WEAPON_STATS } from '../shared/constants.ts';
 import type { GameSnapshot, ItemType, PlayerRole } from '../shared/types.ts';
 import { SoundEffects } from './audio.ts';
 import { PlayerControls } from './controls.ts';
 import { EntityMeshFactory } from './entities.ts';
 import { NetworkClient } from './network.ts';
+import { PhysicsWorld } from './physics.ts';
 import { GameRenderer } from './renderer.ts';
 import { TownWorld } from './town.ts';
 import { UIManager } from './ui.ts';
@@ -13,6 +14,8 @@ interface OfflineEntity {
   mesh: THREE.Group;
   yaw: number;
   twitchTimer: number;
+  activity: 'walk' | 'sit' | 'chat' | 'patrol';
+  target?: { x: number; z: number };
 }
 
 export class CockAndKeysGame {
@@ -22,6 +25,7 @@ export class CockAndKeysGame {
   private ui: UIManager;
   private audio: SoundEffects;
   private network: NetworkClient;
+  private physics: PhysicsWorld;
 
   private clock: THREE.Clock = new THREE.Clock();
   private isRunning: boolean = false;
@@ -51,7 +55,7 @@ export class CockAndKeysGame {
   // Bullet tracers pool
   private activeBulletLines: { line: THREE.Line; expireTime: number }[] = [];
 
-  // Offline local simulation
+  // Offline local simulation inventory
   private offlineInventory = [
     { id: 'fists_local', type: 'fists' as ItemType, name: 'Fists' },
     { id: 'knife_local', type: 'knife' as ItemType, name: 'Tactical Knife' },
@@ -70,6 +74,7 @@ export class CockAndKeysGame {
     this.town = new TownWorld();
     this.renderer.scene.add(this.town.group);
 
+    this.physics = new PhysicsWorld();
     this.controls = new PlayerControls(this.renderer.camera, document.body, this.town);
     this.ui = new UIManager();
     this.audio = new SoundEffects();
@@ -267,6 +272,9 @@ export class CockAndKeysGame {
         keyPickup.position.y = 0.5;
         this.renderer.scene.add(keyPickup);
         this.pickupMeshes.set(`offline_key_${id}`, keyPickup);
+
+        // Physical drop
+        this.physics.addDroppedLootBody(`offline_key_${id}`, keyPickup, mesh.position);
         break;
       }
     }
@@ -282,6 +290,8 @@ export class CockAndKeysGame {
         keyPickup.position.y = 0.5;
         this.renderer.scene.add(keyPickup);
         this.pickupMeshes.set(`offline_key_${id}`, keyPickup);
+
+        this.physics.addDroppedLootBody(`offline_key_${id}`, keyPickup, mesh.position);
         break;
       }
     }
@@ -334,7 +344,7 @@ export class CockAndKeysGame {
       this.triggerCollapseSequence(riddle);
     };
 
-    this.network.onGunshotEvent = (_shooterId, pos) => {
+    this.network.onGunshotEvent = (_shooterId, _pos) => {
       this.audio.playGunshot();
     };
 
@@ -361,7 +371,7 @@ export class CockAndKeysGame {
     this.controls.pos.set(0, 0, 15);
     this.controls.requestLock();
 
-    // Spawn 8 Roosters with unpredictable pathing
+    // 1. Spawn 8 Roosters
     for (let i = 0; i < 8; i++) {
       const rooster = EntityMeshFactory.createRoosterMesh();
       const angle = (i / 8) * Math.PI * 2;
@@ -378,45 +388,112 @@ export class CockAndKeysGame {
       this.offlineRoosterEntities.set(`offline_rooster_${i}`, {
         mesh: rooster,
         yaw: Math.random() * Math.PI * 2,
-        twitchTimer: Math.random() * 1.5
+        twitchTimer: Math.random() * 1.5,
+        activity: 'patrol'
       });
     }
 
-    // Spawn 35 Active Moving NPCs
+    // 2. Spawn 40 NPCs in Real City Sets: Pairs, Conversational Groups, Sitters, Runners
     const factions: ('pedestrian' | 'waiter' | 'doctor' | 'lawyer' | 'guard' | 'merchant')[] = [
       'pedestrian', 'waiter', 'doctor', 'lawyer', 'guard', 'merchant'
     ];
-    for (let i = 0; i < 35; i++) {
+
+    for (let i = 0; i < 40; i++) {
       const faction = factions[i % factions.length];
       const npc = EntityMeshFactory.createCharacterMesh(faction);
-      const angle = (i / 35) * Math.PI * 2 + 0.2;
-      const dist = 18 + (i % 5) * 16;
-      let nx = Math.cos(angle) * dist;
-      let nz = Math.sin(angle) * dist;
+      let nx = 0;
+      let nz = 0;
+      let yaw = 0;
+      let activity: 'walk' | 'sit' | 'chat' | 'patrol' = 'walk';
+      let target: { x: number; z: number } | undefined;
+
+      if (i < 12) {
+        // Pairs walking side-by-side
+        const pairIndex = Math.floor(i / 2);
+        const isSecondOfPair = (i % 2 === 1);
+        const avenueCoord = -60 + pairIndex * 24;
+        nx = isSecondOfPair ? 10.5 : 8.5;
+        nz = avenueCoord;
+        activity = 'walk';
+        yaw = 0;
+        target = { x: nx, z: 80 };
+      } else if (i < 20) {
+        // Conversational circles
+        const circleGroup = i < 16 ? 0 : 1;
+        const center = circleGroup === 0 ? { x: 0, z: 12 } : { x: 0, z: -62 };
+        const circleAngle = ((i % 4) / 4) * Math.PI * 2;
+        nx = center.x + Math.cos(circleAngle) * 2.2;
+        nz = center.z + Math.sin(circleAngle) * 2.2;
+        yaw = circleAngle + Math.PI;
+        activity = 'chat';
+      } else if (i < 26) {
+        // Sitting citizens
+        const benchSpots = [
+          { x: -12, z: 20 }, { x: 12, z: 20 },
+          { x: -12, z: 30 }, { x: 12, z: 30 },
+          { x: -45, z: -45 }, { x: 45, z: 45 }
+        ];
+        const spot = benchSpots[i - 20];
+        nx = spot.x;
+        nz = spot.z;
+        activity = 'sit';
+        // Pose sitting legs forward
+        const lLeg = npc.getObjectByName('leftLeg');
+        const rLeg = npc.getObjectByName('rightLeg');
+        if (lLeg) lLeg.rotation.x = -Math.PI / 2;
+        if (rLeg) rLeg.rotation.x = -Math.PI / 2;
+        npc.position.y = -0.35;
+      } else if (i < 30) {
+        // Athletic runners
+        const offset = (i - 26) * 30;
+        nx = -9.5;
+        nz = -40 + offset;
+        activity = 'patrol';
+        target = { x: -9.5, z: 90 };
+      } else {
+        // Purposeful solo walkers
+        const angle = ((i - 30) / 10) * Math.PI * 2;
+        nx = Math.cos(angle) * 45;
+        nz = Math.sin(angle) * 45;
+        activity = 'walk';
+        target = { x: -nx, z: -nz };
+      }
+
       if (checkObstacleCollision(nx, nz, 0.6)) {
         nx += 3;
         nz += 3;
       }
-      npc.position.set(nx, 0, nz);
+      npc.position.set(nx, npc.position.y, nz);
       this.renderer.scene.add(npc);
       this.npcMeshes.set(`offline_npc_${i}`, npc);
       this.offlineNpcEntities.set(`offline_npc_${i}`, {
         mesh: npc,
-        yaw: Math.random() * Math.PI * 2,
-        twitchTimer: Math.random() * 2.0
+        yaw,
+        twitchTimer: Math.random() * 2.0,
+        activity,
+        target
       });
     }
 
-    // Spawn Weapons INSIDE Different Buildings
+    // 3. Spawn Weapons Everywhere Across Town
     const offlineWeaponSpots: { type: ItemType; name: string; ammo?: number; pos: THREE.Vector3 }[] = [
-      // Inside Restaurant (0, -75) on bar counter
+      // Restaurant (0, -75)
       { type: 'pistol', name: '9mm Semi-Auto Pistol', ammo: 12, pos: new THREE.Vector3(0, 0.8, -82) },
-      // Inside Central Hospital (-75, 0) on bed
+      { type: 'knife', name: 'Chef Combat Knife', pos: new THREE.Vector3(-6, 0.8, -82) },
+      // Hospital (-75, 0)
       { type: 'bandage', name: 'Military Medical Kit', pos: new THREE.Vector3(-80, 0.8, 6) },
-      // Inside Police HQ (0, 75) in evidence locker
+      { type: 'knife', name: 'Scalpel Knife', pos: new THREE.Vector3(-85, 0.8, -6) },
+      // Police HQ (0, 75)
       { type: 'pistol', name: '9mm Tactical Police Pistol', ammo: 12, pos: new THREE.Vector3(0, 0.8, 83) },
-      // Inside City Hall & Bank (75, 0) behind teller counter
-      { type: 'pistol', name: '9mm Vault Pistol', ammo: 12, pos: new THREE.Vector3(78, 0.8, 0) }
+      { type: 'bandage', name: 'Police Medical Pack', pos: new THREE.Vector3(2, 0.8, 72) },
+      // City Hall & Bank (75, 0)
+      { type: 'pistol', name: '9mm Vault Pistol', ammo: 12, pos: new THREE.Vector3(78, 0.8, 0) },
+      // Estate Porches
+      { type: 'pistol', name: 'Cobalt Estate Handgun', ammo: 12, pos: new THREE.Vector3(-80, 0.4, -73) },
+      { type: 'knife', name: 'Crimson Manor Dirk', pos: new THREE.Vector3(80, 0.4, -73) },
+      // Central Plaza
+      { type: 'pistol', name: 'Fountain Stash Pistol', ammo: 12, pos: new THREE.Vector3(0, 0.4, 18) },
+      { type: 'knife', name: 'Bronze Monument Trench Knife', pos: new THREE.Vector3(50, 0.4, 46) }
     ];
 
     offlineWeaponSpots.forEach((spot, idx) => {
@@ -429,18 +506,17 @@ export class CockAndKeysGame {
 
   private handleInteractAction() {
     if (this.isOfflineMode) {
-      // Offline pickup collection
       for (const [id, mesh] of this.pickupMeshes.entries()) {
         if (mesh.position.distanceTo(this.controls.pos) < INTERACTION_DISTANCE + 1.2) {
           this.audio.playPickup();
           this.renderer.scene.remove(mesh);
           this.pickupMeshes.delete(id);
+          this.physics.removeDynamicBody(id);
 
           if (id.includes('key')) {
             this.hasKey = true;
             this.triggerCollapseSequence(HOUSES[0].riddleClue);
           } else {
-            // Weapon pickup
             this.offlineInventory[2] = {
               id: 'scavenged_pistol',
               type: 'pistol',
@@ -456,7 +532,6 @@ export class CockAndKeysGame {
         }
       }
 
-      // Offline estate door unlock
       HOUSES.forEach((h) => {
         const doorPos = new THREE.Vector3(h.doorPos.x, 1.5, h.doorPos.z + 10);
         if (this.controls.pos.distanceTo(doorPos) < INTERACTION_DISTANCE + 1.8) {
@@ -488,7 +563,6 @@ export class CockAndKeysGame {
       return;
     }
 
-    // Check estate doors
     HOUSES.forEach((h) => {
       const doorPos = new THREE.Vector3(h.doorPos.x, 1.5, h.doorPos.z + 10);
       if (this.controls.pos.distanceTo(doorPos) < INTERACTION_DISTANCE + 2.0) {
@@ -539,7 +613,6 @@ export class CockAndKeysGame {
 
     this.ui.updatePlayerCount(Object.keys(snapshot.players).length);
 
-    // Sync bullet traces
     if (snapshot.bulletTraces) {
       snapshot.bulletTraces.forEach((trace) => {
         this.spawnBulletTracer(
@@ -613,7 +686,7 @@ export class CockAndKeysGame {
       }
     }
 
-    // 3. Sync NPCs & Animate Walking Limbs
+    // 3. Sync NPCs & Animate Real Walking Limbs
     const activeNpcIds = new Set<string>();
     for (const [id, npc] of Object.entries(snapshot.npcs)) {
       activeNpcIds.add(id);
@@ -627,17 +700,29 @@ export class CockAndKeysGame {
       mesh.position.lerp(new THREE.Vector3(npc.pos.x, npc.pos.y, npc.pos.z), 0.25);
       mesh.rotation.y = npc.yaw + Math.PI;
 
-      // Animate NPC walking limbs
       const leftLeg = mesh.getObjectByName('leftLeg');
       const rightLeg = mesh.getObjectByName('rightLeg');
       const leftArm = mesh.getObjectByName('leftArm');
       const rightArm = mesh.getObjectByName('rightArm');
 
-      const swing = Math.sin(this.npcAnimTimer + parseInt(id.replace(/\D/g, '') || '0', 10)) * 0.5;
-      if (leftLeg) leftLeg.rotation.x = swing;
-      if (rightLeg) rightLeg.rotation.x = -swing;
-      if (leftArm) leftArm.rotation.x = -swing * 0.7;
-      if (rightArm) rightArm.rotation.x = swing * 0.7;
+      if (npc.state === 'sitting') {
+        if (leftLeg) leftLeg.rotation.x = -Math.PI / 2;
+        if (rightLeg) rightLeg.rotation.x = -Math.PI / 2;
+        if (leftArm) leftArm.rotation.x = 0;
+        if (rightArm) rightArm.rotation.x = 0;
+      } else if (npc.state === 'chatting') {
+        if (leftLeg) leftLeg.rotation.x = 0;
+        if (rightLeg) rightLeg.rotation.x = 0;
+        const gesture = Math.sin(this.npcAnimTimer * 0.7) * 0.3;
+        if (rightArm) rightArm.rotation.x = -0.5 + gesture;
+        if (leftArm) leftArm.rotation.x = 0;
+      } else {
+        const swing = Math.sin(this.npcAnimTimer + parseInt(id.replace(/\D/g, '') || '0', 10)) * 0.55;
+        if (leftLeg) leftLeg.rotation.x = swing;
+        if (rightLeg) rightLeg.rotation.x = -swing;
+        if (leftArm) leftArm.rotation.x = -swing * 0.7;
+        if (rightArm) rightArm.rotation.x = swing * 0.7;
+      }
     }
 
     for (const [id, mesh] of this.npcMeshes.entries()) {
@@ -656,6 +741,7 @@ export class CockAndKeysGame {
         mesh = EntityMeshFactory.createPickupMesh(item.type, item.type === 'key', item.targetHouseId);
         this.renderer.scene.add(mesh);
         this.pickupMeshes.set(id, mesh);
+        this.physics.addDroppedLootBody(id, mesh, item.pos);
       }
 
       mesh.position.set(item.pos.x, item.pos.y, item.pos.z);
@@ -666,63 +752,95 @@ export class CockAndKeysGame {
       if (!activePickupIds.has(id)) {
         this.renderer.scene.remove(mesh);
         this.pickupMeshes.delete(id);
+        this.physics.removeDynamicBody(id);
       }
     }
   }
 
   private updateOfflineAI(delta: number) {
-    // 1. Move all Offline NPCs actively along streets with obstacle avoidance
+    // 1. Move all Offline NPCs along paths
     for (const [_, entity] of this.offlineNpcEntities.entries()) {
       const mesh = entity.mesh;
-      entity.yaw += (Math.random() - 0.5) * 1.2 * delta;
 
-      const moveX = -Math.sin(entity.yaw) * NPC_WALK_SPEED * delta;
-      const moveZ = -Math.cos(entity.yaw) * NPC_WALK_SPEED * delta;
-
-      const nextX = mesh.position.x + moveX;
-      const nextZ = mesh.position.z + moveZ;
-
-      if (!checkObstacleCollision(nextX, nextZ, 0.45)) {
-        mesh.position.x = nextX;
-        mesh.position.z = nextZ;
-      } else {
-        entity.yaw += Math.PI * 0.75;
+      if (entity.activity === 'sit') {
+        continue;
       }
+
+      if (entity.activity === 'chat') {
+        entity.yaw += Math.sin(Date.now() * 0.002) * 0.015;
+        mesh.rotation.y = entity.yaw;
+        const rArm = mesh.getObjectByName('rightArm');
+        if (rArm) rArm.rotation.x = -0.5 + Math.sin(this.npcAnimTimer * 0.6) * 0.3;
+        continue;
+      }
+
+      const isRunner = entity.activity === 'patrol';
+      const speed = isRunner ? NPC_RUN_SPEED : NPC_WALK_SPEED;
+
+      if (entity.target) {
+        const tdx = entity.target.x - mesh.position.x;
+        const tdz = entity.target.z - mesh.position.z;
+        const dist = Math.sqrt(tdx * tdx + tdz * tdz);
+
+        if (dist > 2.0) {
+          entity.yaw = Math.atan2(tdx, tdz) - Math.PI;
+          const moveX = (tdx / dist) * speed * delta;
+          const moveZ = (tdz / dist) * speed * delta;
+
+          if (!checkObstacleCollision(mesh.position.x + moveX, mesh.position.z + moveZ, 0.45)) {
+            mesh.position.x += moveX;
+            mesh.position.z += moveZ;
+          } else {
+            entity.target = { x: -entity.target.x, z: -entity.target.z };
+          }
+        } else {
+          entity.target = { x: -entity.target.x, z: -entity.target.z };
+        }
+      } else {
+        entity.yaw += (Math.random() - 0.5) * 1.0 * delta;
+        const moveX = -Math.sin(entity.yaw) * speed * delta;
+        const moveZ = -Math.cos(entity.yaw) * speed * delta;
+
+        if (!checkObstacleCollision(mesh.position.x + moveX, mesh.position.z + moveZ, 0.45)) {
+          mesh.position.x += moveX;
+          mesh.position.z += moveZ;
+        } else {
+          entity.yaw += Math.PI * 0.75;
+        }
+      }
+
       mesh.rotation.y = entity.yaw + Math.PI;
 
-      // Animate limbs
       const leftLeg = mesh.getObjectByName('leftLeg');
       const rightLeg = mesh.getObjectByName('rightLeg');
       const leftArm = mesh.getObjectByName('leftArm');
       const rightArm = mesh.getObjectByName('rightArm');
-      const swing = Math.sin(this.npcAnimTimer) * 0.5;
+      const swing = Math.sin(this.npcAnimTimer * (isRunner ? 1.6 : 1.0)) * 0.6;
       if (leftLeg) leftLeg.rotation.x = swing;
       if (rightLeg) rightLeg.rotation.x = -swing;
-      if (leftArm) leftArm.rotation.x = -swing * 0.7;
-      if (rightArm) rightArm.rotation.x = swing * 0.7;
+      if (leftArm) leftArm.rotation.x = -swing * 0.75;
+      if (rightArm) rightArm.rotation.x = swing * 0.75;
     }
 
-    // 2. Move all Offline Roosters with erratic unpredictable pathing and obstacle avoidance
+    // 2. Move Roosters
     for (const [_, entity] of this.offlineRoosterEntities.entries()) {
       const mesh = entity.mesh;
       entity.twitchTimer -= delta;
       if (entity.twitchTimer <= 0) {
         entity.twitchTimer = 0.5 + Math.random() * 1.5;
-        entity.yaw += (Math.random() - 0.5) * 3.0; // Random twitch
+        entity.yaw += (Math.random() - 0.5) * 3.0;
       }
 
-      // Check player proximity
       const distToPlayer = mesh.position.distanceTo(this.controls.pos);
       let moveX = 0;
       let moveZ = 0;
 
       if (distToPlayer < 8.0) {
-        // Fleeing frantically with zig-zag
         const dx = mesh.position.x - this.controls.pos.x;
         const dz = mesh.position.z - this.controls.pos.z;
         const fleeAngle = Math.atan2(dx, dz) + Math.sin(Date.now() * 0.008) * 0.6;
-        moveX = Math.sin(fleeAngle) * 9.0 * delta;
-        moveZ = Math.cos(fleeAngle) * 9.0 * delta;
+        moveX = Math.sin(fleeAngle) * 9.5 * delta;
+        moveZ = Math.cos(fleeAngle) * 9.5 * delta;
         entity.yaw = fleeAngle;
       } else {
         moveX = -Math.sin(entity.yaw) * ROOSTER_WALK_SPEED * delta;
@@ -732,7 +850,6 @@ export class CockAndKeysGame {
       const nextX = mesh.position.x + moveX;
       const nextZ = mesh.position.z + moveZ;
 
-      // Obstacle collision check: Roosters NEVER enter obstacles!
       if (!checkObstacleCollision(nextX, nextZ, 0.45)) {
         mesh.position.x = nextX;
         mesh.position.z = nextZ;
@@ -794,6 +911,12 @@ export class CockAndKeysGame {
     const delta = Math.min(this.clock.getDelta(), 0.1);
     this.npcAnimTimer += delta * 6.5;
 
+    // Step Real Physics Simulation
+    this.physics.step(delta);
+
+    // Update Visual Effects (Wind leaf particles, fountain water spray, grass sway)
+    this.renderer.updateVisualEffects(delta);
+
     this.controls.update(delta, !this.isCollapsing);
 
     if (this.isOfflineMode) {
@@ -825,7 +948,7 @@ export class CockAndKeysGame {
       }
     }
 
-    // Bullet line decay
+    // Bullet lines decay
     const nowMs = performance.now();
     for (let i = this.activeBulletLines.length - 1; i >= 0; i--) {
       const bl = this.activeBulletLines[i];

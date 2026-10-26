@@ -11,16 +11,19 @@ export class TownWorld {
   public group: THREE.Group;
   public colliders: BoxCollider[] = [];
   public houseDoorColliders: { houseId: number; pos: THREE.Vector3 }[] = [];
+  public grassInstances: THREE.InstancedMesh | null = null;
 
   constructor() {
     this.group = new THREE.Group();
-    this.buildGroundAndRoads();
+    this.buildLushLawnsAndGround();
+    this.buildRoadsAndPromenades();
     this.buildPerimeterWalls();
+    this.buildInstancedGrassTufts();
     this.buildPlayerEstates();
     this.buildEnterableCivicBuildings();
     this.buildAmbushAlleysAndSlums();
     this.buildCentralParkAndPromenade();
-    this.buildCityStreetlightsAndProps();
+    this.buildParkBenchesAndProps();
   }
 
   public addCollider(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number) {
@@ -30,43 +33,51 @@ export class TownWorld {
     });
   }
 
-  private buildGroundAndRoads() {
-    // Ground Grass / Pavement
-    const groundGeo = new THREE.PlaneGeometry(TOWN_SIZE, TOWN_SIZE);
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.95
+  private buildLushLawnsAndGround() {
+    // 1. Lush Emerald Grass Base
+    const grassGeo = new THREE.PlaneGeometry(TOWN_SIZE, TOWN_SIZE);
+    const grassTex = ProceduralTextures.getLushGrassTexture();
+    const grassMat = new THREE.MeshStandardMaterial({
+      map: grassTex,
+      roughness: 0.85,
+      metalness: 0.05
     });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    const ground = new THREE.Mesh(grassGeo, grassMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.group.add(ground);
+  }
 
+  private buildRoadsAndPromenades() {
     const roadTex = ProceduralTextures.getRoadTexture();
     const roadMat = new THREE.MeshStandardMaterial({
       map: roadTex,
-      roughness: 0.7
+      roughness: 0.65
+    });
+
+    const cobbleTex = ProceduralTextures.getCobblestoneTexture();
+    const cobbleMat = new THREE.MeshStandardMaterial({
+      map: cobbleTex,
+      roughness: 0.6
     });
 
     const sidewalkTex = ProceduralTextures.getSidewalkTexture();
     const sidewalkMat = new THREE.MeshStandardMaterial({
       map: sidewalkTex,
-      roughness: 0.8
+      roughness: 0.75
     });
 
-    // North-South Grand Avenue (Width: 16m)
-    const nsRoadGeo = new THREE.PlaneGeometry(16, TOWN_SIZE);
-    const nsRoad = new THREE.Mesh(nsRoadGeo, roadMat);
+    // North-South Grand Avenue (16m wide)
+    const nsRoad = new THREE.Mesh(new THREE.PlaneGeometry(16, TOWN_SIZE), roadMat);
     nsRoad.rotation.x = -Math.PI / 2;
-    nsRoad.position.y = 0.02;
+    nsRoad.position.y = 0.03;
     nsRoad.receiveShadow = true;
     this.group.add(nsRoad);
 
-    // East-West Grand Boulevard (Width: 16m)
-    const ewRoadGeo = new THREE.PlaneGeometry(TOWN_SIZE, 16);
-    const ewRoad = new THREE.Mesh(ewRoadGeo, roadMat);
+    // East-West Grand Boulevard (16m wide)
+    const ewRoad = new THREE.Mesh(new THREE.PlaneGeometry(TOWN_SIZE, 16), roadMat);
     ewRoad.rotation.x = -Math.PI / 2;
-    ewRoad.position.y = 0.02;
+    ewRoad.position.y = 0.03;
     ewRoad.receiveShadow = true;
     this.group.add(ewRoad);
 
@@ -74,30 +85,76 @@ export class TownWorld {
     [-80, 80].forEach((zCoord) => {
       const ringRoad = new THREE.Mesh(new THREE.PlaneGeometry(TOWN_SIZE, 12), roadMat);
       ringRoad.rotation.x = -Math.PI / 2;
-      ringRoad.position.set(0, 0.02, zCoord);
+      ringRoad.position.set(0, 0.03, zCoord);
+      ringRoad.receiveShadow = true;
       this.group.add(ringRoad);
     });
 
     [-80, 80].forEach((xCoord) => {
       const ringRoad = new THREE.Mesh(new THREE.PlaneGeometry(12, TOWN_SIZE), roadMat);
       ringRoad.rotation.x = -Math.PI / 2;
-      ringRoad.position.set(xCoord, 0.02, 0);
+      ringRoad.position.set(xCoord, 0.03, 0);
+      ringRoad.receiveShadow = true;
       this.group.add(ringRoad);
     });
 
+    // Cobblestone Central Plaza Promenade (Round circle at center)
+    const plazaGeo = new THREE.CircleGeometry(36, 32);
+    const plaza = new THREE.Mesh(plazaGeo, cobbleMat);
+    plaza.rotation.x = -Math.PI / 2;
+    plaza.position.y = 0.04;
+    plaza.receiveShadow = true;
+    this.group.add(plaza);
+
     // Sidewalks
     const swWidth = 3;
-    const nsSwLeft = new THREE.Mesh(new THREE.BoxGeometry(swWidth, 0.2, TOWN_SIZE), sidewalkMat);
-    nsSwLeft.position.set(-9.5, 0.1, 0);
-    const nsSwRight = new THREE.Mesh(new THREE.BoxGeometry(swWidth, 0.2, TOWN_SIZE), sidewalkMat);
-    nsSwRight.position.set(9.5, 0.1, 0);
+    const nsSwLeft = new THREE.Mesh(new THREE.BoxGeometry(swWidth, 0.22, TOWN_SIZE), sidewalkMat);
+    nsSwLeft.position.set(-9.5, 0.11, 0);
+    const nsSwRight = new THREE.Mesh(new THREE.BoxGeometry(swWidth, 0.22, TOWN_SIZE), sidewalkMat);
+    nsSwRight.position.set(9.5, 0.11, 0);
     this.group.add(nsSwLeft, nsSwRight);
 
-    const ewSwTop = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, 0.2, swWidth), sidewalkMat);
-    ewSwTop.position.set(0, 0.1, -9.5);
-    const ewSwBottom = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, 0.2, swWidth), sidewalkMat);
-    ewSwBottom.position.set(0, 0.1, 9.5);
+    const ewSwTop = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, 0.22, swWidth), sidewalkMat);
+    ewSwTop.position.set(0, 0.11, -9.5);
+    const ewSwBottom = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, 0.22, swWidth), sidewalkMat);
+    ewSwBottom.position.set(0, 0.11, 9.5);
     this.group.add(ewSwTop, ewSwBottom);
+  }
+
+  private buildInstancedGrassTufts() {
+    // 1500 3D blade tufts scattered on the park lawns
+    const grassCount = 1500;
+    const bladeGeo = new THREE.ConeGeometry(0.08, 0.55, 4);
+    bladeGeo.translate(0, 0.27, 0);
+    const bladeMat = new THREE.MeshStandardMaterial({
+      color: 0x4ade80,
+      roughness: 0.6,
+      side: THREE.DoubleSide
+    });
+
+    this.grassInstances = new THREE.InstancedMesh(bladeGeo, bladeMat, grassCount);
+    const dummy = new THREE.Object3D();
+
+    let placed = 0;
+    while (placed < grassCount) {
+      const rx = (Math.random() - 0.5) * 220;
+      const rz = (Math.random() - 0.5) * 220;
+
+      // Avoid paved roads
+      if (Math.abs(rx) > 12 && Math.abs(rz) > 12 && !checkObstacleCollision(rx, rz, 0.5)) {
+        dummy.position.set(rx, 0, rz);
+        dummy.rotation.y = Math.random() * Math.PI * 2;
+        dummy.rotation.z = (Math.random() - 0.5) * 0.25;
+        const scale = 0.7 + Math.random() * 0.6;
+        dummy.scale.set(scale, scale, scale);
+        dummy.updateMatrix();
+        this.grassInstances.setMatrixAt(placed, dummy.matrix);
+        placed++;
+      }
+    }
+
+    this.grassInstances.receiveShadow = true;
+    this.group.add(this.grassInstances);
   }
 
   private buildPerimeterWalls() {
@@ -105,8 +162,8 @@ export class TownWorld {
     const wallHeight = TOWN_WALL_HEIGHT;
     const wallThick = 2;
     const wallMat = new THREE.MeshStandardMaterial({
-      map: ProceduralTextures.getBrickTexture('#334155', '#1e293b'),
-      roughness: 0.8
+      map: ProceduralTextures.getBrickTexture('#475569', '#94a3b8'),
+      roughness: 0.75
     });
 
     // North
@@ -150,6 +207,7 @@ export class TownWorld {
       const manor = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), brickMat);
       manor.position.y = h / 2;
       manor.castShadow = true;
+      manor.receiveShadow = true;
       estateGroup.add(manor);
 
       const roof = new THREE.Mesh(
@@ -189,15 +247,6 @@ export class TownWorld {
       estateGroup.position.set(house.doorPos.x, 0, house.doorPos.z);
       this.group.add(estateGroup);
 
-      this.addCollider(
-        house.doorPos.x - w / 2,
-        0,
-        house.doorPos.z - d / 2,
-        house.doorPos.x + w / 2,
-        h + 5,
-        house.doorPos.z + d / 2
-      );
-
       this.houseDoorColliders.push({
         houseId: house.id,
         pos: new THREE.Vector3(house.doorPos.x, 1.5, house.doorPos.z + d / 2 + 2)
@@ -213,7 +262,7 @@ export class TownWorld {
 
     const hospitalWall = new THREE.MeshStandardMaterial({
       color: 0xf8fafc,
-      roughness: 0.4
+      roughness: 0.35
     });
 
     const policeWall = new THREE.MeshStandardMaterial({
@@ -236,51 +285,38 @@ export class TownWorld {
       roughness: 0.3
     });
 
-    // ============================================================
     // 1. ENTERABLE RESTAURANT: Le Grand Bistro (0, -75)
-    // Size: Width 28m, Depth 20m, Height 8m.
-    // Front door opening: x in [-3, 3] at z = -65.
-    // ============================================================
     const restGroup = new THREE.Group();
     restGroup.position.set(0, 0, -75);
 
-    // Interior floor
     const restFloor = new THREE.Mesh(new THREE.PlaneGeometry(28, 20), parquetFloorMat);
     restFloor.rotation.x = -Math.PI / 2;
     restFloor.position.y = 0.05;
     restFloor.receiveShadow = true;
     restGroup.add(restFloor);
 
-    // Ceiling / Roof
     const restRoof = new THREE.Mesh(new THREE.BoxGeometry(29, 0.6, 21), wallBrick);
     restRoof.position.y = 8;
     restGroup.add(restRoof);
 
-    // Back wall (z = -10 relative to building center, absolute z = -85)
     const restBack = new THREE.Mesh(new THREE.BoxGeometry(28, 8, 1), wallBrick);
     restBack.position.set(0, 4, -10);
     restGroup.add(restBack);
 
-    // Left wall (x = -14)
     const restLeft = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 20), wallBrick);
     restLeft.position.set(-14, 4, 0);
     restGroup.add(restLeft);
 
-    // Right wall (x = 14)
     const restRight = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 20), wallBrick);
     restRight.position.set(14, 4, 0);
     restGroup.add(restRight);
 
-    // Front Wall with 6m open double doorway in center:
-    // Left front section: x from -14 to -3
     const restFrontLeft = new THREE.Mesh(new THREE.BoxGeometry(11, 8, 1), wallBrick);
     restFrontLeft.position.set(-8.5, 4, 10);
-    // Right front section: x from 3 to 14
     const restFrontRight = new THREE.Mesh(new THREE.BoxGeometry(11, 8, 1), wallBrick);
     restFrontRight.position.set(8.5, 4, 10);
     restGroup.add(restFrontLeft, restFrontRight);
 
-    // Striped Awning above open doorway
     const awning = new THREE.Mesh(
       new THREE.BoxGeometry(8, 0.4, 3),
       new THREE.MeshStandardMaterial({ color: 0xd97706 })
@@ -288,12 +324,10 @@ export class TownWorld {
     awning.position.set(0, 5, 11.5);
     restGroup.add(awning);
 
-    // Warm Interior Chandeliers
     const restLight = new THREE.PointLight(0xffedd5, 1.5, 16);
     restLight.position.set(0, 6, 0);
     restGroup.add(restLight);
 
-    // Interior Furniture: Polished Bar Counter inside along back wall
     const barCounter = new THREE.Mesh(
       new THREE.BoxGeometry(14, 1.2, 1.5),
       new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.3 })
@@ -301,7 +335,6 @@ export class TownWorld {
     barCounter.position.set(0, 0.6, -7);
     restGroup.add(barCounter);
 
-    // Dining tables inside
     [-7, 7].forEach((tx) => {
       [-2, 4].forEach((tz) => {
         const table = new THREE.Mesh(
@@ -315,11 +348,7 @@ export class TownWorld {
 
     this.group.add(restGroup);
 
-    // ============================================================
-    // 2. ENTERABLE HOSPITAL: Central Hospital (-75, 0)
-    // Size: Width 34m, Depth 24m, Height 8m.
-    // Front entrance opening: z in [-3, 3] at x = -58.
-    // ============================================================
+    // 2. ONLY ONE SINGLE CENTRAL HOSPITAL: Central Hospital (-75, 0)
     const hospGroup = new THREE.Group();
     hospGroup.position.set(-75, 0, 0);
 
@@ -333,29 +362,25 @@ export class TownWorld {
     hospRoof.position.y = 8;
     hospGroup.add(hospRoof);
 
-    // Back wall (x = -17 relative, absolute x = -92)
     const hospBack = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 24), hospitalWall);
     hospBack.position.set(-17, 4, 0);
     hospGroup.add(hospBack);
 
-    // North wall (z = -12)
     const hospNorth = new THREE.Mesh(new THREE.BoxGeometry(34, 8, 1), hospitalWall);
     hospNorth.position.set(0, 4, -12);
     hospGroup.add(hospNorth);
 
-    // South wall (z = 12)
     const hospSouth = new THREE.Mesh(new THREE.BoxGeometry(34, 8, 1), hospitalWall);
     hospSouth.position.set(0, 4, 12);
     hospGroup.add(hospSouth);
 
-    // Front Wall (facing East towards center at x = 17, absolute x = -58) with open doorway
     const hospFrontTop = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), hospitalWall);
     hospFrontTop.position.set(17, 4, 7.5);
     const hospFrontBottom = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), hospitalWall);
     hospFrontBottom.position.set(17, 4, -7.5);
     hospGroup.add(hospFrontTop, hospFrontBottom);
 
-    // Luminous Red Cross Sign above entrance
+    // Luminous Red Cross Sign
     const cross1 = new THREE.Mesh(
       new THREE.BoxGeometry(0.3, 1.2, 3),
       new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0xb91c1c, emissiveIntensity: 1.5 })
@@ -368,7 +393,6 @@ export class TownWorld {
     cross2.position.set(17.2, 6, 0);
     hospGroup.add(cross1, cross2);
 
-    // Hospital Interior Reception Desk
     const hospDesk = new THREE.Mesh(
       new THREE.BoxGeometry(2, 1.1, 7),
       new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.3 })
@@ -376,7 +400,6 @@ export class TownWorld {
     hospDesk.position.set(11, 0.55, 0);
     hospGroup.add(hospDesk);
 
-    // Hospital Triage Gurney / Beds inside
     [-10, -4].forEach((bx) => {
       [-6, 6].forEach((bz) => {
         const bed = new THREE.Mesh(
@@ -394,11 +417,7 @@ export class TownWorld {
 
     this.group.add(hospGroup);
 
-    // ============================================================
-    // 3. ENTERABLE POLICE HQ & COURTHOUSE (0, 75)
-    // Size: Width 26m, Depth 20m, Height 8m.
-    // Front entrance opening: x in [-3, 3] at z = 65.
-    // ============================================================
+    // 3. ENTERABLE POLICE HQ (0, 75)
     const policeGroup = new THREE.Group();
     policeGroup.position.set(0, 0, 75);
 
@@ -412,29 +431,24 @@ export class TownWorld {
     policeRoof.position.y = 8;
     policeGroup.add(policeRoof);
 
-    // Back wall (z = 10 relative, absolute z = 85)
     const polBack = new THREE.Mesh(new THREE.BoxGeometry(26, 8, 1), policeWall);
     polBack.position.set(0, 4, 10);
     policeGroup.add(polBack);
 
-    // Left wall (x = -13)
     const polLeft = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 20), policeWall);
     polLeft.position.set(-13, 4, 0);
     policeGroup.add(polLeft);
 
-    // Right wall (x = 13)
     const polRight = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 20), policeWall);
     polRight.position.set(13, 4, 0);
     policeGroup.add(polRight);
 
-    // Front Wall with open doorway at z = -10 (absolute z = 65)
     const polFrontLeft = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 1), policeWall);
     polFrontLeft.position.set(-8, 4, -10);
     const polFrontRight = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 1), policeWall);
     polFrontRight.position.set(8, 4, -10);
     policeGroup.add(polFrontLeft, polFrontRight);
 
-    // Police Officer Sergeant Desk inside
     const polDesk = new THREE.Mesh(
       new THREE.BoxGeometry(6, 1.1, 2.5),
       new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 })
@@ -442,7 +456,6 @@ export class TownWorld {
     polDesk.position.set(0, 0.55, -3);
     policeGroup.add(polDesk);
 
-    // Police Evidence Lockers along back wall
     const locker = new THREE.Mesh(
       new THREE.BoxGeometry(10, 3.5, 1.2),
       new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 })
@@ -456,11 +469,7 @@ export class TownWorld {
 
     this.group.add(policeGroup);
 
-    // ============================================================
     // 4. ENTERABLE CITY HALL & BANK (75, 0)
-    // Size: Width 32m, Depth 24m, Height 8m.
-    // Front entrance opening: z in [-3, 3] at x = 59.
-    // ============================================================
     const bankGroup = new THREE.Group();
     bankGroup.position.set(75, 0, 0);
 
@@ -474,29 +483,24 @@ export class TownWorld {
     bankRoof.position.y = 8;
     bankGroup.add(bankRoof);
 
-    // Back wall (x = 16, absolute x = 91)
     const bankBack = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 24), bankWall);
     bankBack.position.set(16, 4, 0);
     bankGroup.add(bankBack);
 
-    // North wall (z = -12)
     const bankNorth = new THREE.Mesh(new THREE.BoxGeometry(32, 8, 1), bankWall);
     bankNorth.position.set(0, 4, -12);
     bankGroup.add(bankNorth);
 
-    // South wall (z = 12)
     const bankSouth = new THREE.Mesh(new THREE.BoxGeometry(32, 8, 1), bankWall);
     bankSouth.position.set(0, 4, 12);
     bankGroup.add(bankSouth);
 
-    // Front Wall (x = -16, absolute x = 59) with open doorway
     const bankFrontTop = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), bankWall);
     bankFrontTop.position.set(-16, 4, 7.5);
     const bankFrontBottom = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), bankWall);
     bankFrontBottom.position.set(-16, 4, -7.5);
     bankGroup.add(bankFrontTop, bankFrontBottom);
 
-    // Bank Teller Counter inside
     const tellerCounter = new THREE.Mesh(
       new THREE.BoxGeometry(2, 1.3, 14),
       new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.4 })
@@ -625,7 +629,7 @@ export class TownWorld {
 
     const canopy = new THREE.Mesh(
       new THREE.DodecahedronGeometry(8, 2),
-      new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.8 })
+      new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 })
     );
     canopy.position.y = 15;
     canopy.castShadow = true;
@@ -656,7 +660,48 @@ export class TownWorld {
     this.group.add(monumentGroup);
   }
 
-  private buildCityStreetlightsAndProps() {
+  private buildParkBenchesAndProps() {
+    const woodMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getWoodTexture(),
+      roughness: 0.5
+    });
+    const ironMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.8,
+      roughness: 0.3
+    });
+
+    // Park Benches around fountain and parks
+    const benchPositions = [
+      { x: -12, z: 20, rot: Math.PI / 4 },
+      { x: 12, z: 20, rot: -Math.PI / 4 },
+      { x: -12, z: 30, rot: 3 * Math.PI / 4 },
+      { x: 12, z: 30, rot: -3 * Math.PI / 4 },
+      { x: -45, z: -45, rot: 0 },
+      { x: 45, z: 45, rot: Math.PI }
+    ];
+
+    benchPositions.forEach((bp) => {
+      const benchGroup = new THREE.Group();
+      // Seat
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.7), woodMat);
+      seat.position.y = 0.55;
+      // Backrest
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.6, 0.08), woodMat);
+      back.position.set(0, 0.95, -0.32);
+      // Iron legs
+      const leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.55, 0.6), ironMat);
+      leg1.position.set(-1.0, 0.275, 0);
+      const leg2 = leg1.clone();
+      leg2.position.set(1.0, 0.275, 0);
+
+      benchGroup.add(seat, back, leg1, leg2);
+      benchGroup.position.set(bp.x, 0, bp.z);
+      benchGroup.rotation.y = bp.rot;
+      this.group.add(benchGroup);
+    });
+
+    // Streetlamps
     const lampCoords = [
       { x: -11, z: -30 }, { x: 11, z: -30 },
       { x: -11, z: 0 }, { x: 11, z: 0 },
