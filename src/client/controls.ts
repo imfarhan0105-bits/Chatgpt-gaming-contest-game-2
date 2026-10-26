@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { checkObstacleCollision, PLAYER_CROUCH_SPEED, PLAYER_SPRINT_SPEED, PLAYER_WALK_SPEED } from '../shared/constants.ts';
+import { checkObstacleCollision, getTerrainHeight, PLAYER_CROUCH_SPEED, PLAYER_SPRINT_SPEED, PLAYER_WALK_SPEED } from '../shared/constants.ts';
 import { TownWorld } from './town.ts';
 
 export class PlayerControls {
@@ -16,15 +16,15 @@ export class PlayerControls {
   private targetYaw: number = 0;
   private targetPitch: number = 0;
 
-  // Perspective settings (Default: Close, High-Control Third-Person PvP)
-  public isThirdPerson: boolean = true;
+  // Perspective settings (Default: First-Person 3D tactical view as requested)
+  public isThirdPerson: boolean = false;
   public isAiming: boolean = false;
   public isCrouching: boolean = false;
 
-  // Tight, controllable camera settings
-  private targetCamDistance: number = 1.75; // Close over-the-shoulder view
-  private currentCamDistance: number = 1.75;
-  private shoulderOffset: number = 0.32; // Tight right shoulder offset
+  // Smooth spring-arm third-person settings
+  private targetCamDistance: number = 0;
+  private currentCamDistance: number = 0;
+  private shoulderOffset: number = 0.28;
 
   private keys: Record<string, boolean> = {};
   private isGrounded: boolean = true;
@@ -213,72 +213,78 @@ export class PlayerControls {
       this.walkCycleTimer = 0;
     }
 
+    // Ground Elevation & Slope Physics
+    const groundElevation = getTerrainHeight(this.pos.x, this.pos.z);
+
     // Jump & gravity
     if (!this.isGrounded) {
       this.jumpVelocity -= this.gravity * delta;
       this.pos.y += this.jumpVelocity * delta;
 
-      if (this.pos.y <= 0) {
-        this.pos.y = 0;
+      if (this.pos.y <= groundElevation) {
+        this.pos.y = groundElevation;
         this.jumpVelocity = 0;
         this.isGrounded = true;
       }
+    } else {
+      // Smoothly ascend and descend terrain slopes, knolls, and bridge ramps
+      this.pos.y = THREE.MathUtils.lerp(this.pos.y, groundElevation, Math.min(1.0, delta * 24.0));
     }
 
-    // Collision check X
+    // PUBG-Style Wall Sliding: Independent X and Z collision checks
     const testPosX = this.pos.clone();
     testPosX.x += moveVector.x * delta;
-    if (!checkObstacleCollision(testPosX.x, testPosX.z, 0.45) && !this.town.checkCollision(new THREE.Vector3(testPosX.x, testPosX.y + 1, testPosX.z), 0.45)) {
+    if (!checkObstacleCollision(testPosX.x, testPosX.z, 0.42) && !this.town.checkCollision(new THREE.Vector3(testPosX.x, testPosX.y + 0.8, testPosX.z), 0.42)) {
       this.pos.x = testPosX.x;
     }
 
-    // Collision check Z
     const testPosZ = this.pos.clone();
     testPosZ.z += moveVector.z * delta;
-    if (!checkObstacleCollision(testPosZ.x, testPosZ.z, 0.45) && !this.town.checkCollision(new THREE.Vector3(testPosZ.x, testPosZ.y + 1, testPosZ.z), 0.45)) {
+    if (!checkObstacleCollision(testPosZ.x, testPosZ.z, 0.42) && !this.town.checkCollision(new THREE.Vector3(testPosZ.x, testPosZ.y + 0.8, testPosZ.z), 0.42)) {
       this.pos.z = testPosZ.z;
     }
 
-    this.updateCameraPosition();
+    this.updateCameraPosition(delta);
   }
 
-  private updateCameraPosition() {
-    this.targetCamDistance = this.isAiming ? 1.15 : (this.isThirdPerson ? 1.75 : 0);
-    this.currentCamDistance += (this.targetCamDistance - this.currentCamDistance) * 0.22;
-
+  private updateCameraPosition(delta: number = 0.016) {
     const eyeHeight = this.isCrouching ? 1.05 : 1.65;
     const playerCenter = new THREE.Vector3(this.pos.x, this.pos.y + eyeHeight, this.pos.z);
 
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
-    this.camera.fov = this.isAiming ? 52 : 72;
+    this.camera.fov = this.isAiming ? 48 : 72;
     this.camera.updateProjectionMatrix();
 
-    if (this.currentCamDistance < 0.1) {
-      // First Person
+    if (!this.isThirdPerson) {
+      // Rock-Solid First-Person Perspective: Zero jitter, zero vibration!
+      this.currentCamDistance = 0;
       this.camera.position.copy(playerCenter);
     } else {
-      // Third-Person PvP: Tightly framed right shoulder camera
+      // Third-Person Perspective: Smooth Damped Spring Arm
+      let targetDist = this.isAiming ? 1.15 : 1.75;
+
       const fX = -Math.sin(this.yaw) * Math.cos(this.pitch);
       const fY = -Math.sin(this.pitch);
       const fZ = -Math.cos(this.yaw) * Math.cos(this.pitch);
-
       const rX = Math.cos(this.yaw);
       const rZ = -Math.sin(this.yaw);
 
-      const offsetShoulder = this.isAiming ? 0.22 : this.shoulderOffset;
+      const offsetShoulder = this.isAiming ? 0.20 : this.shoulderOffset;
 
-      let camX = playerCenter.x - fX * this.currentCamDistance + rX * offsetShoulder;
-      let camY = playerCenter.y - fY * this.currentCamDistance + 0.18;
-      let camZ = playerCenter.z - fZ * this.currentCamDistance + rZ * offsetShoulder;
-
-      // Obstacle collision detection for camera
-      if (checkObstacleCollision(camX, camZ, 0.25) || this.town.checkCollision(new THREE.Vector3(camX, camY, camZ), 0.25)) {
-        camX = playerCenter.x - fX * 0.8 + rX * (offsetShoulder * 0.4);
-        camY = playerCenter.y - fY * 0.8 + 0.15;
-        camZ = playerCenter.z - fZ * 0.8 + rZ * (offsetShoulder * 0.4);
+      // Check obstacle obstruction along line of sight to smoothly pull camera forward
+      const checkX = playerCenter.x - fX * targetDist;
+      const checkZ = playerCenter.z - fZ * targetDist;
+      if (checkObstacleCollision(checkX, checkZ, 0.35)) {
+        targetDist = 0.95;
       }
+
+      this.currentCamDistance = THREE.MathUtils.lerp(this.currentCamDistance, targetDist, Math.min(1.0, delta * 14.0));
+
+      const camX = playerCenter.x - fX * this.currentCamDistance + rX * offsetShoulder;
+      const camY = playerCenter.y - fY * this.currentCamDistance + 0.16;
+      const camZ = playerCenter.z - fZ * this.currentCamDistance + rZ * offsetShoulder;
 
       this.camera.position.set(camX, camY, camZ);
     }

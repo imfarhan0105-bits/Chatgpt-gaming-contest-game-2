@@ -4,6 +4,64 @@ import type { HouseDefinition, NpcFaction, PlayerRole } from './types.ts';
 export const TOWN_SIZE = 260;
 export const TOWN_WALL_HEIGHT = 8;
 
+/**
+ * Procedural Topographical 3D Terrain Heightfield function.
+ * Deterministic, smooth, and physically continuous across client & server.
+ * Returns elevation Y in meters for any world coordinate (X, Z).
+ */
+export function getTerrainHeight(x: number, z: number): number {
+  const distFromCenter = Math.sqrt(x * x + z * z);
+
+  // 1. Mountain Ridges & Foothills encircling town outside radius 112m
+  if (distFromCenter > 112) {
+    const factor = Math.min(1.0, (distFromCenter - 112) / 38);
+    const angle = Math.atan2(z, x);
+    const ridgeHarmonics = Math.sin(angle * 6) * 14 + Math.cos(angle * 12) * 6;
+    const baseRise = factor * factor * 35;
+    return Math.max(0, baseRise + ridgeHarmonics * factor);
+  }
+
+  // 2. Central Plaza: Flat level grade at y = 0
+  if (distFromCenter <= 34) {
+    return 0;
+  }
+
+  // 3. Flat Pavements for Grand Avenues & Secondary Streets
+  const isAvenueX = Math.abs(x) <= 8.5;
+  const isAvenueZ = Math.abs(z) <= 8.5;
+  const isRingX = Math.abs(Math.abs(x) - 80) <= 6.5;
+  const isRingZ = Math.abs(Math.abs(z) - 80) <= 6.5;
+
+  // 4. Scenic River Canal (z between -52 and -38)
+  const canalDistZ = Math.abs(z - (-45));
+  if (canalDistZ <= 7.0) {
+    // Check if crossing one of the 3 stone bridges
+    const isBridge = Math.abs(x) <= 9.0 || Math.abs(x - 80) <= 6.5 || Math.abs(x - (-80)) <= 6.5;
+    if (isBridge) {
+      return 0.3; // Level bridge deck
+    }
+    // Smoothly carved riverbed drop
+    const drop = 1 - canalDistZ / 7.0;
+    return -1.6 * Math.sin(drop * Math.PI * 0.5);
+  }
+
+  if (isAvenueX || isAvenueZ || isRingX || isRingZ) {
+    return 0;
+  }
+
+  // 5. Level Building Foundation Pads
+  if (Math.abs(x - (-75)) < 19 && Math.abs(z) < 14) return 0; // Central Hospital
+  if (Math.abs(x) < 16 && Math.abs(z - (-75)) < 12) return 0; // Bistro
+  if (Math.abs(x) < 15 && Math.abs(z - 75) < 12) return 0; // Police HQ
+  if (Math.abs(x - 75) < 18 && Math.abs(z) < 14) return 0; // City Hall & Bank
+  if (Math.abs(Math.abs(x) - 80) < 12 && Math.abs(Math.abs(z) - 80) < 12) return 0; // 4 Estates
+
+  // 6. Natural Rolling Grassy Knolls & Berms in parklands
+  const knoll1 = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 0.9;
+  const knoll2 = Math.sin((x + 35) * 0.05) * Math.sin((z - 25) * 0.05) * 0.6;
+  return Math.max(0, knoll1 + knoll2);
+}
+
 export const TICK_RATE = 20; // 20 ticks per second (50ms interval)
 export const MATCH_DURATION_SECONDS = 8 * 60; // 8 minutes
 

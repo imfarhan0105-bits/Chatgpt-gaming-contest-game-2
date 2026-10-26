@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { checkObstacleCollision, getAccurateHouseRiddle, HOUSES, INTERACTION_DISTANCE, NPC_RUN_SPEED, NPC_WALK_SPEED, ROOSTER_WALK_SPEED, WEAPON_STATS } from '../shared/constants.ts';
+import { checkObstacleCollision, getAccurateHouseRiddle, getTerrainHeight, HOUSES, INTERACTION_DISTANCE, NPC_RUN_SPEED, NPC_WALK_SPEED, ROOSTER_WALK_SPEED, WEAPON_STATS } from '../shared/constants.ts';
 import type { GameSnapshot, ItemType, PlayerRole } from '../shared/types.ts';
 import { SoundEffects } from './audio.ts';
 import { PlayerControls } from './controls.ts';
@@ -9,6 +9,7 @@ import { PhysicsWorld } from './physics.ts';
 import { GameRenderer } from './renderer.ts';
 import { TownWorld } from './town.ts';
 import { UIManager } from './ui.ts';
+import { FPVViewModel } from './viewmodel.ts';
 
 interface OfflineEntity {
   mesh: THREE.Group;
@@ -26,6 +27,7 @@ export class CockAndKeysGame {
   private audio: SoundEffects;
   private network: NetworkClient;
   private physics: PhysicsWorld;
+  private viewmodel: FPVViewModel;
 
   private clock: THREE.Clock = new THREE.Clock();
   private isRunning: boolean = false;
@@ -76,6 +78,7 @@ export class CockAndKeysGame {
 
     this.physics = new PhysicsWorld();
     this.controls = new PlayerControls(this.renderer.camera, document.body, this.town);
+    this.viewmodel = new FPVViewModel(this.renderer.camera);
     this.ui = new UIManager();
     this.audio = new SoundEffects();
     this.network = new NetworkClient();
@@ -84,6 +87,7 @@ export class CockAndKeysGame {
     this.setupUIHandlers();
     this.setupNetworkHandlers();
     this.setupControlsCallbacks();
+    this.spawnTownCiviliansAndRoosters();
 
     this.isRunning = true;
     requestAnimationFrame(this.gameLoop.bind(this));
@@ -96,6 +100,9 @@ export class CockAndKeysGame {
   }
 
   private updateLocalEquippedWeapon(type: ItemType) {
+    if (this.viewmodel) {
+      this.viewmodel.setWeapon(type);
+    }
     if (!this.localPlayerMesh) return;
     const socket = this.localPlayerMesh.getObjectByName('weaponSocket') as THREE.Group;
     if (!socket) return;
@@ -224,6 +231,7 @@ export class CockAndKeysGame {
       : (this.network.latestSnapshot?.players[this.network.playerId || '']?.inventory[this.activeSlotIndex]);
 
     const weaponType = activeItem ? activeItem.type : 'fists';
+    this.viewmodel.triggerAttack(weaponType);
 
     if (weaponType === 'pistol') {
       if (activeItem && activeItem.ammo && activeItem.ammo <= 0) {
@@ -362,14 +370,8 @@ export class CockAndKeysGame {
     };
   }
 
-  private startOfflinePractice() {
-    this.isOfflineMode = true;
-    this.myRole = 'pedestrian';
-    this.myAssignedHouse = 0;
-    this.ui.showGameHUD('pedestrian', 'SOLO', 0);
-    this.ui.updateInventory(this.offlineInventory, this.activeSlotIndex);
-    this.controls.pos.set(0, 0, 15);
-    this.controls.requestLock();
+  public spawnTownCiviliansAndRoosters() {
+    if (this.offlineNpcEntities.size > 0) return;
 
     // 1. Spawn 8 Roosters
     for (let i = 0; i < 8; i++) {
@@ -382,7 +384,7 @@ export class CockAndKeysGame {
         rx += 3;
         rz += 3;
       }
-      rooster.position.set(rx, 0, rz);
+      rooster.position.set(rx, getTerrainHeight(rx, rz), rz);
       this.renderer.scene.add(rooster);
       this.roosterMeshes.set(`offline_rooster_${i}`, rooster);
       this.offlineRoosterEntities.set(`offline_rooster_${i}`, {
@@ -427,7 +429,7 @@ export class CockAndKeysGame {
         yaw = circleAngle + Math.PI;
         activity = 'chat';
       } else if (i < 26) {
-        // Sitting citizens
+        // Sitting citizens on park benches (bench seat at y = 0.45)
         const benchSpots = [
           { x: -12, z: 20 }, { x: 12, z: 20 },
           { x: -12, z: 30 }, { x: 12, z: 30 },
@@ -437,12 +439,8 @@ export class CockAndKeysGame {
         nx = spot.x;
         nz = spot.z;
         activity = 'sit';
-        // Pose sitting legs forward
-        const lLeg = npc.getObjectByName('leftLeg');
-        const rLeg = npc.getObjectByName('rightLeg');
-        if (lLeg) lLeg.rotation.x = -Math.PI / 2;
-        if (rLeg) rLeg.rotation.x = -Math.PI / 2;
-        npc.position.y = -0.35;
+        EntityMeshFactory.animateSittingNpcWithPhone(npc, 0);
+        npc.position.y = 0.45;
       } else if (i < 30) {
         // Athletic runners
         const offset = (i - 26) * 30;
@@ -463,7 +461,8 @@ export class CockAndKeysGame {
         nx += 3;
         nz += 3;
       }
-      npc.position.set(nx, npc.position.y, nz);
+      const ny = activity === 'sit' ? getTerrainHeight(nx, nz) + 0.45 : getTerrainHeight(nx, nz);
+      npc.position.set(nx, ny, nz);
       this.renderer.scene.add(npc);
       this.npcMeshes.set(`offline_npc_${i}`, npc);
       this.offlineNpcEntities.set(`offline_npc_${i}`, {
@@ -502,6 +501,16 @@ export class CockAndKeysGame {
       this.renderer.scene.add(mesh);
       this.pickupMeshes.set(`offline_pickup_${idx}`, mesh);
     });
+  }
+
+  private startOfflinePractice() {
+    this.isOfflineMode = true;
+    this.myRole = 'pedestrian';
+    this.myAssignedHouse = 0;
+    this.ui.showGameHUD('pedestrian', 'SOLO', 0);
+    this.ui.updateInventory(this.offlineInventory, this.activeSlotIndex);
+    this.controls.pos.set(0, 0, 15);
+    this.controls.requestLock();
   }
 
   private handleInteractAction() {
@@ -689,10 +698,12 @@ export class CockAndKeysGame {
       }
     }
 
-    for (const [id, mesh] of this.roosterMeshes.entries()) {
-      if (!activeRoosterIds.has(id)) {
-        this.renderer.scene.remove(mesh);
-        this.roosterMeshes.delete(id);
+    if (activeRoosterIds.size > 0) {
+      for (const [id, mesh] of this.roosterMeshes.entries()) {
+        if (!activeRoosterIds.has(id)) {
+          this.renderer.scene.remove(mesh);
+          this.roosterMeshes.delete(id);
+        }
       }
     }
 
@@ -709,11 +720,6 @@ export class CockAndKeysGame {
 
       mesh.position.lerp(new THREE.Vector3(npc.pos.x, npc.pos.y, npc.pos.z), 0.25);
       mesh.rotation.y = npc.yaw + Math.PI;
-
-      const leftLeg = mesh.getObjectByName('leftLeg');
-      const rightLeg = mesh.getObjectByName('rightLeg');
-      const leftArm = mesh.getObjectByName('leftArm');
-      const rightArm = mesh.getObjectByName('rightArm');
 
       if (npc.state === 'sitting') {
         EntityMeshFactory.animateSittingNpcWithPhone(mesh, this.npcAnimTimer);
@@ -733,10 +739,12 @@ export class CockAndKeysGame {
       }
     }
 
-    for (const [id, mesh] of this.npcMeshes.entries()) {
-      if (!activeNpcIds.has(id)) {
-        this.renderer.scene.remove(mesh);
-        this.npcMeshes.delete(id);
+    if (activeNpcIds.size > 0) {
+      for (const [id, mesh] of this.npcMeshes.entries()) {
+        if (!activeNpcIds.has(id)) {
+          this.renderer.scene.remove(mesh);
+          this.npcMeshes.delete(id);
+        }
       }
     }
 
@@ -771,6 +779,7 @@ export class CockAndKeysGame {
       const mesh = entity.mesh;
 
       if (entity.activity === 'sit') {
+        EntityMeshFactory.animateSittingNpcWithPhone(mesh, this.npcAnimTimer);
         continue;
       }
 
@@ -798,6 +807,7 @@ export class CockAndKeysGame {
           if (!checkObstacleCollision(mesh.position.x + moveX, mesh.position.z + moveZ, 0.45)) {
             mesh.position.x += moveX;
             mesh.position.z += moveZ;
+            mesh.position.y = getTerrainHeight(mesh.position.x, mesh.position.z);
           } else {
             entity.target = { x: -entity.target.x, z: -entity.target.z };
           }
@@ -812,22 +822,14 @@ export class CockAndKeysGame {
         if (!checkObstacleCollision(mesh.position.x + moveX, mesh.position.z + moveZ, 0.45)) {
           mesh.position.x += moveX;
           mesh.position.z += moveZ;
+          mesh.position.y = getTerrainHeight(mesh.position.x, mesh.position.z);
         } else {
           entity.yaw += Math.PI * 0.75;
         }
       }
 
       mesh.rotation.y = entity.yaw + Math.PI;
-
-      if (entity.activity === 'sit') {
-        EntityMeshFactory.animateSittingNpcWithPhone(mesh, this.npcAnimTimer);
-      } else if (entity.activity === 'chat') {
-        const rightArm = mesh.getObjectByName('rightArm');
-        const gesture = Math.sin(this.npcAnimTimer * 0.7) * 0.3;
-        if (rightArm) rightArm.rotation.x = -0.5 + gesture;
-      } else {
-        EntityMeshFactory.animateWalkingHuman(mesh, this.npcAnimTimer, isRunner);
-      }
+      EntityMeshFactory.animateWalkingHuman(mesh, this.npcAnimTimer, isRunner);
     }
 
     // 2. Move Roosters
@@ -861,6 +863,7 @@ export class CockAndKeysGame {
       if (!checkObstacleCollision(nextX, nextZ, 0.45)) {
         mesh.position.x = nextX;
         mesh.position.z = nextZ;
+        mesh.position.y = getTerrainHeight(mesh.position.x, mesh.position.z);
       } else {
         entity.yaw = Math.random() * Math.PI * 2;
       }
@@ -935,11 +938,23 @@ export class CockAndKeysGame {
 
     this.controls.update(delta, !this.isCollapsing);
 
+    // Update First-Person Viewmodel (Arms, weapon bobbing, recoil, sway)
+    this.viewmodel.update(
+      delta,
+      this.controls.isThirdPerson,
+      this.controls.isMoving(),
+      this.controls.isSprinting(),
+      this.controls.isAiming,
+      this.controls.walkCycleTimer,
+      this.controls.yaw,
+      this.controls.pitch
+    );
+
     if (this.isOfflineMode) {
       this.updateOfflineAI(delta);
     }
 
-    // Local player mesh in Third-Person PvP mode
+    // Local player mesh in Third-Person mode
     if (this.localPlayerMesh) {
       this.localPlayerMesh.visible = this.controls.isThirdPerson;
       this.localPlayerMesh.position.set(this.controls.pos.x, this.controls.pos.y, this.controls.pos.z);
@@ -962,7 +977,6 @@ export class CockAndKeysGame {
         if (leftKnee) leftKnee.rotation.x = 0.65;
         if (rightKnee) rightKnee.rotation.x = 0.65;
         if (rightArm) rightArm.rotation.x = this.controls.isAiming ? -Math.PI / 2 : 0;
-        this.localPlayerMesh.position.y = -0.35;
       } else {
         const leftLeg = this.localPlayerMesh.getObjectByName('leftLeg');
         const rightLeg = this.localPlayerMesh.getObjectByName('rightLeg');
@@ -976,7 +990,6 @@ export class CockAndKeysGame {
         if (rightKnee) rightKnee.rotation.x = 0;
         if (leftArm) leftArm.rotation.x = 0;
         if (rightArm) rightArm.rotation.x = this.controls.isAiming ? -Math.PI / 2 : 0;
-        this.localPlayerMesh.position.y = 0;
       }
     }
 

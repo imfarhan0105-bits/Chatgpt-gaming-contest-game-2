@@ -1,6 +1,7 @@
 import {
   checkObstacleCollision,
   getAccurateHouseRiddle,
+  getTerrainHeight,
   HOUSES,
   INTERACTION_DISTANCE,
   MATCH_DURATION_SECONDS,
@@ -69,6 +70,137 @@ export class GameRoom {
 
   constructor(roomCode: string) {
     this.roomCode = roomCode;
+    this.initWorldEntities();
+  }
+
+  public initWorldEntities() {
+    // 1. Initialize 8 Roosters and 8 Keys across the town
+    this.roosters.clear();
+    this.keys.clear();
+    this.pickups.clear();
+    this.roosterTwitchTimers.clear();
+
+    for (let i = 0; i < 8; i++) {
+      const keyId = `key_${i}`;
+      const isGenuine = i < 4;
+      const targetHouseId = i % 4;
+
+      const keyState: KeyItemState = {
+        id: keyId,
+        targetHouseId,
+        isGenuine,
+        carriedByRoosterId: `rooster_${i}`,
+        carriedByPlayerId: null,
+        worldPos: null
+      };
+      this.keys.set(keyId, keyState);
+
+      const angle = (i / 8) * Math.PI * 2;
+      const dist = 32 + (i % 3) * 18;
+      let rx = Math.cos(angle) * dist;
+      let rz = Math.sin(angle) * dist;
+
+      if (checkObstacleCollision(rx, rz, 0.6)) {
+        rx += 4;
+        rz += 4;
+      }
+
+      const roosterState: RoosterState = {
+        id: `rooster_${i}`,
+        pos: { x: rx, y: getTerrainHeight(rx, rz), z: rz },
+        yaw: Math.random() * Math.PI * 2,
+        health: 50,
+        maxHealth: 50,
+        isKnockedOut: false,
+        carriedKeyId: keyId
+      };
+      this.roosters.set(roosterState.id, roosterState);
+      this.roosterTwitchTimers.set(roosterState.id, Math.random() * 1.5);
+    }
+
+    // 2. Populate 40 NPCs in Real City Sets: Pairs, Conversational Circles, Runners, Sitters
+    this.npcs.clear();
+    this.npcTargets.clear();
+
+    for (let i = 0; i < 40; i++) {
+      const faction = NPC_FACTIONS[i % NPC_FACTIONS.length];
+      let activity: NpcActivity = 'walk';
+      let nx = 0;
+      let nz = 0;
+      let yaw = Math.random() * Math.PI * 2;
+      let ny = 0;
+
+      if (i < 12) {
+        // Pairs / Duos walking side by side
+        const pairIndex = Math.floor(i / 2);
+        const isSecondOfPair = (i % 2 === 1);
+        const avenueCoord = -60 + pairIndex * 24;
+        nx = isSecondOfPair ? 10.5 : 8.5; // Walking down the eastern sidewalk
+        nz = avenueCoord;
+        activity = 'walk';
+        yaw = 0; // Walking south
+        this.npcTargets.set(`npc_${i}`, { x: nx, z: 80 });
+      } else if (i < 20) {
+        // Conversational circles in Central Plaza and outside Bistro
+        const circleGroup = i < 16 ? 0 : 1;
+        const center = circleGroup === 0 ? { x: 0, z: 12 } : { x: 0, z: -62 };
+        const circleAngle = ((i % 4) / 4) * Math.PI * 2;
+        nx = center.x + Math.cos(circleAngle) * 2.2;
+        nz = center.z + Math.sin(circleAngle) * 2.2;
+        yaw = circleAngle + Math.PI; // Facing inward to talk
+        activity = 'chat';
+      } else if (i < 26) {
+        // Sitting citizens on park benches (bench height y = 0.45)
+        const benchSpots = [
+          { x: -12, z: 20 }, { x: 12, z: 20 },
+          { x: -12, z: 30 }, { x: 12, z: 30 },
+          { x: -45, z: -45 }, { x: 45, z: 45 }
+        ];
+        const spot = benchSpots[i - 20];
+        nx = spot.x;
+        nz = spot.z;
+        ny = 0.45;
+        activity = 'sit';
+      } else if (i < 30) {
+        // Athletic Joggers / Runners
+        const runnerOffset = (i - 26) * 30;
+        nx = -9.5;
+        nz = -40 + runnerOffset;
+        activity = 'patrol'; // Runs fast
+        this.npcTargets.set(`npc_${i}`, { x: -9.5, z: 90 });
+      } else {
+        // Purposeful solo walkers traversing town
+        const angle = ((i - 30) / 10) * Math.PI * 2;
+        nx = Math.cos(angle) * 45;
+        nz = Math.sin(angle) * 45;
+        activity = 'walk';
+        this.npcTargets.set(`npc_${i}`, { x: -nx, z: -nz });
+      }
+
+      if (checkObstacleCollision(nx, nz, 0.6)) {
+        nx += 2;
+        nz += 2;
+      }
+
+      ny = activity === 'sit' ? getTerrainHeight(nx, nz) + 0.45 : getTerrainHeight(nx, nz);
+
+      const npc: NpcState = {
+        id: `npc_${i}`,
+        faction,
+        name: `${faction.charAt(0).toUpperCase() + faction.slice(1)} ${i + 1}`,
+        pos: { x: nx, y: ny, z: nz },
+        yaw,
+        health: 80,
+        maxHealth: 80,
+        state: activity === 'sit' ? 'sitting' : (activity === 'chat' ? 'chatting' : 'patrol'),
+        activity,
+        targetPlayerId: null
+      };
+      this.npcs.set(npc.id, npc);
+    }
+
+    // 3. Distribute Weapons Everywhere Across the Town
+    this.spawnWeaponsEverywhere();
   }
 
   public addClient(id: string, name: string, ws: ConnectedClient['ws']): ConnectedClient {
@@ -195,130 +327,7 @@ export class GameRoom {
       });
     });
 
-    // 2. Initialize 8 Roosters and 8 Keys across the town
-    this.roosters.clear();
-    this.keys.clear();
-    this.pickups.clear();
-    this.roosterTwitchTimers.clear();
-
-    for (let i = 0; i < 8; i++) {
-      const keyId = `key_${i}`;
-      const isGenuine = i < 4;
-      const targetHouseId = i % 4;
-
-      const keyState: KeyItemState = {
-        id: keyId,
-        targetHouseId,
-        isGenuine,
-        carriedByRoosterId: `rooster_${i}`,
-        carriedByPlayerId: null,
-        worldPos: null
-      };
-      this.keys.set(keyId, keyState);
-
-      const angle = (i / 8) * Math.PI * 2;
-      const dist = 32 + (i % 3) * 18;
-      let rx = Math.cos(angle) * dist;
-      let rz = Math.sin(angle) * dist;
-
-      if (checkObstacleCollision(rx, rz, 0.6)) {
-        rx += 4;
-        rz += 4;
-      }
-
-      const roosterState: RoosterState = {
-        id: `rooster_${i}`,
-        pos: { x: rx, y: 0.5, z: rz },
-        yaw: Math.random() * Math.PI * 2,
-        health: 50,
-        maxHealth: 50,
-        isKnockedOut: false,
-        carriedKeyId: keyId
-      };
-      this.roosters.set(roosterState.id, roosterState);
-      this.roosterTwitchTimers.set(roosterState.id, Math.random() * 1.5);
-    }
-
-    // 3. Populate 40 NPCs in Real City Sets: Pairs, Conversational Circles, Runners, Sitters
-    this.npcs.clear();
-    this.npcTargets.clear();
-
-    for (let i = 0; i < 40; i++) {
-      const faction = NPC_FACTIONS[i % NPC_FACTIONS.length];
-      let activity: NpcActivity = 'walk';
-      let nx = 0;
-      let nz = 0;
-      let yaw = Math.random() * Math.PI * 2;
-
-      if (i < 12) {
-        // Pairs / Duos walking side by side
-        const pairIndex = Math.floor(i / 2);
-        const isSecondOfPair = (i % 2 === 1);
-        const avenueCoord = -60 + pairIndex * 24;
-        nx = isSecondOfPair ? 10.5 : 8.5; // Walking down the eastern sidewalk
-        nz = avenueCoord;
-        activity = 'walk';
-        yaw = 0; // Walking south
-        this.npcTargets.set(`npc_${i}`, { x: nx, z: 80 });
-      } else if (i < 20) {
-        // Conversational circles in Central Plaza and outside Bistro
-        const circleGroup = i < 16 ? 0 : 1;
-        const center = circleGroup === 0 ? { x: 0, z: 12 } : { x: 0, z: -62 };
-        const circleAngle = ((i % 4) / 4) * Math.PI * 2;
-        nx = center.x + Math.cos(circleAngle) * 2.2;
-        nz = center.y + Math.sin(circleAngle) * 2.2;
-        yaw = circleAngle + Math.PI; // Facing inward to talk
-        activity = 'chat';
-      } else if (i < 26) {
-        // Sitting citizens on park benches
-        const benchSpots = [
-          { x: -12, z: 20 }, { x: 12, z: 20 },
-          { x: -12, z: 30 }, { x: 12, z: 30 },
-          { x: -45, z: -45 }, { x: 45, z: 45 }
-        ];
-        const spot = benchSpots[i - 20];
-        nx = spot.x;
-        nz = spot.z;
-        activity = 'sit';
-      } else if (i < 30) {
-        // Athletic Joggers / Runners
-        const runnerOffset = (i - 26) * 30;
-        nx = -9.5;
-        nz = -40 + runnerOffset;
-        activity = 'patrol'; // Runs fast
-        this.npcTargets.set(`npc_${i}`, { x: -9.5, z: 90 });
-      } else {
-        // Purposeful solo walkers traversing town
-        const angle = ((i - 30) / 10) * Math.PI * 2;
-        nx = Math.cos(angle) * 45;
-        nz = Math.sin(angle) * 45;
-        activity = 'walk';
-        this.npcTargets.set(`npc_${i}`, { x: -nx, z: -nz });
-      }
-
-      if (checkObstacleCollision(nx, nz, 0.6)) {
-        nx += 2;
-        nz += 2;
-      }
-
-      const npc: NpcState = {
-        id: `npc_${i}`,
-        faction,
-        name: `${faction.charAt(0).toUpperCase() + faction.slice(1)} ${i + 1}`,
-        pos: { x: nx, y: 0, z: nz },
-        yaw,
-        health: 80,
-        maxHealth: 80,
-        state: activity === 'sit' ? 'sitting' : (activity === 'chat' ? 'chatting' : 'patrol'),
-        activity,
-        targetPlayerId: null
-      };
-      this.npcs.set(npc.id, npc);
-    }
-
-    // 4. Distribute Weapons Everywhere Across the Town
-    this.spawnWeaponsEverywhere();
-
+    this.initWorldEntities();
     this.startTick();
     return true;
   }
@@ -471,6 +480,7 @@ export class GameRoom {
       if (!checkObstacleCollision(testX, testZ, 0.45)) {
         rooster.pos.x = testX;
         rooster.pos.z = testZ;
+        rooster.pos.y = getTerrainHeight(rooster.pos.x, rooster.pos.z);
       } else {
         rooster.yaw = Math.random() * Math.PI * 2;
       }
@@ -580,6 +590,9 @@ export class GameRoom {
       const half = TOWN_SIZE / 2 - 6;
       npc.pos.x = Math.max(-half, Math.min(half, npc.pos.x));
       npc.pos.z = Math.max(-half, Math.min(half, npc.pos.z));
+      if (npc.activity !== 'sit') {
+        npc.pos.y = getTerrainHeight(npc.pos.x, npc.pos.z);
+      }
     }
   }
 
@@ -589,7 +602,7 @@ export class GameRoom {
 
     const half = TOWN_SIZE / 2 - 2;
     player.pos.x = Math.max(-half, Math.min(half, pos.x));
-    player.pos.y = Math.max(0, Math.min(10.0, pos.y));
+    player.pos.y = Math.max(-5.0, Math.min(25.0, pos.y));
     player.pos.z = Math.max(-half, Math.min(half, pos.z));
     player.yaw = yaw;
     player.pitch = pitch;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { checkObstacleCollision, HOUSES, LANDMARKS, TOWN_SIZE, TOWN_WALL_HEIGHT } from '../shared/constants.ts';
+import { checkObstacleCollision, getTerrainHeight, HOUSES, LANDMARKS, TOWN_SIZE, TOWN_WALL_HEIGHT } from '../shared/constants.ts';
 import { ProceduralTextures } from './textures.ts';
 
 export interface BoxCollider {
@@ -132,18 +132,29 @@ export class TownWorld {
   }
 
   private buildLushLawnsAndGround() {
-    // 1. Lush Emerald Grass Base
-    const grassGeo = new THREE.PlaneGeometry(TOWN_SIZE, TOWN_SIZE);
+    // 1. High-Density Topographical 3D Terrain with hills, knolls, canal bed & mountain rises
+    const terrainGeo = new THREE.PlaneGeometry(310, 310, 128, 128);
+    terrainGeo.rotateX(-Math.PI / 2);
+
+    const posAttr = terrainGeo.attributes.position;
+    for (let i = 0; i < posAttr.count; i++) {
+      const vx = posAttr.getX(i);
+      const vz = posAttr.getZ(i);
+      const vy = getTerrainHeight(vx, vz);
+      posAttr.setY(i, vy);
+    }
+    terrainGeo.computeVertexNormals();
+
     const grassTex = ProceduralTextures.getLushGrassTexture();
-    const grassMat = new THREE.MeshStandardMaterial({
+    const terrainMat = new THREE.MeshStandardMaterial({
       map: grassTex,
-      roughness: 0.85,
+      roughness: 0.82,
       metalness: 0.05
     });
-    const ground = new THREE.Mesh(grassGeo, grassMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.group.add(ground);
+
+    const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
+    terrainMesh.receiveShadow = true;
+    this.group.add(terrainMesh);
   }
 
   private buildRoadsAndPromenades() {

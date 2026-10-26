@@ -26,6 +26,7 @@ export class GameRenderer {
 
     this.camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 450);
     this.camera.position.set(0, 1.7, 0);
+    this.scene.add(this.camera);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,

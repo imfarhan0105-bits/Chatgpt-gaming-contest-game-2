@@ -658,9 +658,6 @@ export class EntityMeshFactory {
     if (leftKnee) leftKnee.rotation.x = Math.PI / 2;
     if (rightKnee) rightKnee.rotation.x = Math.PI / 2;
 
-    // Bench height offset so character sits flush on bench slats
-    character.position.y = 0.45;
-
     // 2. Head & Arm Actions (Talking on Phone vs. Looking at Screen)
     const head = character.getObjectByName('headGroup') || character.children.find(c => c.type === 'Group' && c.position.y > 1.6);
     const rightArm = character.getObjectByName('rightArm');
@@ -765,8 +762,5 @@ export class EntityMeshFactory {
 
     if (leftForearm) leftForearm.rotation.x = isRunning ? -0.7 : -0.25;
     if (rightForearm) rightForearm.rotation.x = isRunning ? -0.7 : -0.25;
-
-    // Subtle torso vertical bounce
-    character.position.y = Math.abs(Math.sin(time * freq)) * (isRunning ? 0.12 : 0.05);
   }
 }
