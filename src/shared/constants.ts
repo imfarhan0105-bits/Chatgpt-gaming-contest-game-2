@@ -80,7 +80,9 @@ export const INTERACTION_DISTANCE = 4.2;
 export const WEAPON_STATS = {
   fists: { damage: 15, range: 2.2, cooldown: 0.4 },
   knife: { damage: 40, backstabDamage: 85, range: 2.4, cooldown: 0.35 },
-  pistol: { damage: 35, headshotMultiplier: 1.8, range: 65, magSize: 12, reloadTime: 1.8, fireRate: 0.25 }
+  pistol: { damage: 35, headshotMultiplier: 1.8, range: 65, magSize: 12, reloadTime: 1.8, fireRate: 0.25, velocity: 320, drop: 9.8 },
+  rifle: { damage: 95, headshotMultiplier: 2.5, range: 240, magSize: 5, reloadTime: 2.8, fireRate: 1.0, velocity: 720, drop: 4.2, isScoped: true, zoomFov: 16 },
+  shotgun: { damage: 18, pellets: 8, spread: 0.08, headshotMultiplier: 1.5, range: 28, magSize: 6, reloadTime: 2.2, fireRate: 0.75, velocity: 240, drop: 12.0 }
 };
 
 export const PLAYER_ROLES: PlayerRole[] = ['pedestrian', 'waiter', 'doctor', 'lawyer'];
@@ -239,19 +241,41 @@ export const SOLID_OBSTACLE_BOUNDS: SharedAABB[] = [
   // South wall
   { minX: 59, minZ: 11, maxX: 91, maxZ: 13 },
 
-  // 10. Ambush Alleys Walls & Dumpsters
-  // (-35, -35)
-  { minX: -49, minZ: -37, maxX: -31, maxZ: -33 },
-  { minX: -39, minZ: -29, maxX: -21, maxZ: -25 },
-  // (35, -35)
-  { minX: 21, minZ: -37, maxX: 39, maxZ: -33 },
-  { minX: 31, minZ: -29, maxX: 49, maxZ: -25 },
-  // (-35, 35)
-  { minX: -49, minZ: 33, maxX: -31, maxZ: 37 },
-  { minX: -39, minZ: 41, maxX: -21, maxZ: 45 },
-  // (35, 35)
-  { minX: 21, minZ: 33, maxX: 39, maxZ: 37 },
-  { minX: 31, minZ: 41, maxX: 49, maxZ: 45 }
+  // 10. Four Enterable Player Estates / Villas (Prevents Chickens & Players trespassing through walls)
+  // House 0: Cobalt Estate (-80, -80)
+  { minX: -89, minZ: -89, maxX: -71, maxZ: -87 }, // Back wall
+  { minX: -90, minZ: -88, maxX: -88, maxZ: -72 }, // Left wall
+  { minX: -72, minZ: -88, maxX: -70, maxZ: -72 }, // Right wall
+  { minX: -89, minZ: -73, maxX: -81.5, maxZ: -71 }, // Front wall left
+  { minX: -78.5, minZ: -73, maxX: -71, maxZ: -71 }, // Front wall right
+
+  // House 1: Crimson Manor (80, -80)
+  { minX: 71, minZ: -89, maxX: 89, maxZ: -87 }, // Back wall
+  { minX: 70, minZ: -88, maxX: 72, maxZ: -72 }, // Left wall
+  { minX: 88, minZ: -88, maxX: 90, maxZ: -72 }, // Right wall
+  { minX: 71, minZ: -73, maxX: 78.5, maxZ: -71 }, // Front wall left
+  { minX: 81.5, minZ: -73, maxX: 89, maxZ: -71 }, // Front wall right
+
+  // House 2: Emerald Villa (-80, 80)
+  { minX: -89, minZ: 71, maxX: -71, maxZ: 73 }, // Back wall
+  { minX: -90, minZ: 72, maxX: -88, maxZ: 88 }, // Left wall
+  { minX: -72, minZ: 72, maxX: -70, maxZ: 88 }, // Right wall
+  { minX: -89, minZ: 87, maxX: -81.5, maxZ: 89 }, // Front wall left
+  { minX: -78.5, minZ: 87, maxX: -71, maxZ: 89 }, // Front wall right
+
+  // House 3: Amber Residence (80, 80)
+  { minX: 71, minZ: 71, maxX: 89, maxZ: 73 }, // Back wall
+  { minX: 70, minZ: 72, maxX: 72, maxZ: 88 }, // Left wall
+  { minX: 88, minZ: 72, maxX: 90, maxZ: 88 }, // Right wall
+  { minX: 71, minZ: 87, maxX: 78.5, maxZ: 89 }, // Front wall left
+  { minX: 81.5, minZ: 87, maxX: 89, maxZ: 89 }, // Front wall right
+
+  // 11. Central Park Gazebo Pavilion (0, 48)
+  { minX: -4.5, minZ: 44, maxX: -1.5, maxZ: 45 }, // Left front
+  { minX: 1.5, minZ: 44, maxX: 4.5, maxZ: 45 }, // Right front
+  { minX: -4.5, minZ: 51, maxX: 4.5, maxZ: 52 }, // Back wall
+  { minX: -4.5, minZ: 45, maxX: -3.5, maxZ: 51 }, // Left wall
+  { minX: 3.5, minZ: 45, maxX: 4.5, maxZ: 51 } // Right wall
 ];
 
 export function checkObstacleCollision(x: number, z: number, radius: number = 0.45): boolean {

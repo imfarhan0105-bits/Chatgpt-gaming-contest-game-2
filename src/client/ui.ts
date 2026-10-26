@@ -3,6 +3,7 @@ import { GameSnapshot, InventoryItem, PlayerRole } from '../shared/types.ts';
 export class UIManager {
   private hud: HTMLElement;
   private crosshair: HTMLElement;
+  private sniperScope: HTMLElement;
   private interactionPrompt: HTMLElement;
   private clickToPlayOverlay: HTMLElement;
   private collapseOverlay: HTMLElement;
@@ -52,6 +53,7 @@ export class UIManager {
   constructor() {
     this.hud = document.getElementById('hud')!;
     this.crosshair = document.getElementById('crosshair')!;
+    this.sniperScope = document.getElementById('sniper-scope')!;
     this.interactionPrompt = document.getElementById('interaction-prompt')!;
     this.clickToPlayOverlay = document.getElementById('click-to-play-overlay')!;
     this.collapseOverlay = document.getElementById('collapse-overlay')!;
@@ -131,8 +133,14 @@ export class UIManager {
     this.gameOverModal.style.display = 'none';
     this.hud.style.display = 'none';
     this.crosshair.style.display = 'none';
+    this.sniperScope.style.display = 'none';
     this.clickToPlayOverlay.style.display = 'none';
     this.collapseOverlay.classList.remove('active');
+  }
+
+  public setSniperScopeVisible(visible: boolean) {
+    this.sniperScope.style.display = visible ? 'block' : 'none';
+    this.crosshair.style.display = visible ? 'none' : 'block';
   }
 
   public showMenuError(msg: string) {

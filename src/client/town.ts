@@ -36,7 +36,7 @@ export class TownWorld {
     this.buildInstancedGrassTufts();
     this.buildPlayerEstates();
     this.buildEnterableCivicBuildings();
-    this.buildAmbushAlleysAndSlums();
+    this.buildParksAndPromenades();
     this.buildCentralParkAndPromenade();
     this.buildParkBenchesAndProps();
     this.buildRealisticTreesAndHidingBushes();
@@ -297,55 +297,235 @@ export class TownWorld {
   }
 
   private buildPlayerEstates() {
-    const brickMat = new THREE.MeshStandardMaterial({
-      map: ProceduralTextures.getBrickTexture('#991b1b', '#d1d5db'),
-      roughness: 0.7
-    });
-
-    const woodDoorMat = new THREE.MeshStandardMaterial({
+    const woodFloorMat = new THREE.MeshStandardMaterial({
       map: ProceduralTextures.getWoodTexture(),
       roughness: 0.5
+    });
+
+    const windowMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getGlassWindowTexture(),
+      roughness: 0.1,
+      metalness: 0.9,
+      transparent: true,
+      opacity: 0.75
+    });
+
+    const stoneTrimMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      roughness: 0.5
+    });
+
+    const darkIronMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.8,
+      roughness: 0.3
     });
 
     HOUSES.forEach((house) => {
       const estateGroup = new THREE.Group();
       const w = 18;
-      const h = 10;
+      const h = 9.6;
       const d = 16;
 
-      const manor = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), brickMat);
-      manor.position.y = h / 2;
-      manor.castShadow = true;
-      manor.receiveShadow = true;
-      estateGroup.add(manor);
+      const brickMat = new THREE.MeshStandardMaterial({
+        map: ProceduralTextures.getBrickTexture(
+          house.id === 0 ? '#1e3a8a' : (house.id === 1 ? '#991b1b' : (house.id === 2 ? '#065f46' : '#b45309')),
+          '#cbd5e1'
+        ),
+        roughness: 0.7
+      });
 
-      const roof = new THREE.Mesh(
-        new THREE.ConeGeometry(14, 5, 4),
-        new THREE.MeshStandardMaterial({ color: house.colorHex, roughness: 0.4, metalness: 0.2 })
-      );
-      roof.position.y = h + 2.5;
-      roof.rotation.y = Math.PI / 4;
-      roof.castShadow = true;
-      estateGroup.add(roof);
+      // 1. GROUND FLOOR INTERIOR & WALLS
+      // Ground floor parquet flooring
+      const groundFloor = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.6, d - 0.6), woodFloorMat);
+      groundFloor.rotation.x = -Math.PI / 2;
+      groundFloor.position.y = 0.05;
+      groundFloor.receiveShadow = true;
+      estateGroup.add(groundFloor);
 
-      // Front Porch & Portico
-      const porch = new THREE.Mesh(
-        new THREE.BoxGeometry(6, 0.4, 4),
-        new THREE.MeshStandardMaterial({ color: 0x64748b })
+      // Back Wall
+      const backWall = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.6), brickMat);
+      backWall.position.set(0, h / 2, -d / 2);
+      backWall.castShadow = true;
+      estateGroup.add(backWall);
+
+      // Left Wall
+      const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.6, h, d), brickMat);
+      leftWall.position.set(-w / 2, h / 2, 0);
+      leftWall.castShadow = true;
+      estateGroup.add(leftWall);
+
+      // Right Wall
+      const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.6, h, d), brickMat);
+      rightWall.position.set(w / 2, h / 2, 0);
+      rightWall.castShadow = true;
+      estateGroup.add(rightWall);
+
+      // Front Wall Ground Floor (Doorway opening 2.6m wide in center at z = d / 2)
+      const frontLeft = new THREE.Mesh(new THREE.BoxGeometry(7.7, 4.8, 0.6), brickMat);
+      frontLeft.position.set(-5.15, 2.4, d / 2);
+      frontLeft.castShadow = true;
+      const frontRight = new THREE.Mesh(new THREE.BoxGeometry(7.7, 4.8, 0.6), brickMat);
+      frontRight.position.set(5.15, 2.4, d / 2);
+      frontRight.castShadow = true;
+      const frontDoorLintel = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.0, 0.6), stoneTrimMat);
+      frontDoorLintel.position.set(0, 4.3, d / 2);
+      estateGroup.add(frontLeft, frontRight, frontDoorLintel);
+
+      // Ground floor windows with glass panes
+      [-5.2, 5.2].forEach((wx) => {
+        const win = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.0, 0.1), windowMat);
+        win.position.set(wx, 2.4, d / 2 + 0.32);
+        const winFrame = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.2, 0.15), stoneTrimMat);
+        winFrame.position.set(wx, 2.4, d / 2 + 0.28);
+        estateGroup.add(win, winFrame);
+      });
+
+      // Interior Fireplace on Back Wall
+      const fireplace = new THREE.Mesh(new THREE.BoxGeometry(3.6, 3.2, 1.2), stoneTrimMat);
+      fireplace.position.set(0, 1.6, -d / 2 + 0.6);
+      const hearth = new THREE.Mesh(
+        new THREE.BoxGeometry(2.0, 1.8, 0.8),
+        new THREE.MeshStandardMaterial({ color: 0x18181b, emissive: 0xea580c, emissiveIntensity: 0.8 })
       );
-      porch.position.set(0, 0.2, d / 2 + 2);
+      hearth.position.set(0, 0.9, -d / 2 + 0.7);
+      estateGroup.add(fireplace, hearth);
+
+      // Interior Loot Stash Dining Table
+      const table = new THREE.Mesh(
+        new THREE.BoxGeometry(3.2, 0.9, 1.8),
+        new THREE.MeshStandardMaterial({ map: ProceduralTextures.getWoodTexture() })
+      );
+      table.position.set(-2, 0.45, 0);
+      estateGroup.add(table);
+
+      // Ceiling Light Fixture Ground Floor
+      const ceilingLight = new THREE.PointLight(0xfef3c7, 1.8, 16);
+      ceilingLight.position.set(0, 4.2, 0);
+      estateGroup.add(ceilingLight);
+
+      // INTERIOR WOODEN STAIRCASE (Smooth climbing to 2nd Floor & Terrace)
+      const stepCount = 12;
+      const stepW = 2.2;
+      const stepD = (d - 4) / stepCount;
+      const stepH = 4.8 / stepCount;
+      for (let s = 0; s < stepCount; s++) {
+        const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(stepW, stepH * (s + 1), stepD), woodFloorMat);
+        stepMesh.position.set(w / 2 - stepW / 2 - 0.3, (stepH * (s + 1)) / 2, -d / 2 + 2 + s * stepD);
+        stepMesh.castShadow = true;
+        stepMesh.receiveShadow = true;
+        estateGroup.add(stepMesh);
+      }
+
+      // Handrail along stairs
+      const handrail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.08, d - 4),
+        darkIronMat
+      );
+      handrail.position.set(w / 2 - stepW - 0.4, 3.3, 0);
+      handrail.rotation.x = -0.38;
+      estateGroup.add(handrail);
+
+      // 2. SECOND FLOOR & BALCONY
+      // Second floor floorboard
+      const secondFloorMain = new THREE.Mesh(new THREE.BoxGeometry(w - stepW - 1.2, 0.25, d - 0.6), woodFloorMat);
+      secondFloorMain.position.set(-(stepW + 0.6) / 2, 4.8, 0);
+      secondFloorMain.receiveShadow = true;
+      estateGroup.add(secondFloorMain);
+
+      // Second Floor Upper Front Wall (with doorway to Balcony)
+      const upperFrontLeft = new THREE.Mesh(new THREE.BoxGeometry(7.7, 4.8, 0.6), brickMat);
+      upperFrontLeft.position.set(-5.15, 7.2, d / 2);
+      const upperFrontRight = new THREE.Mesh(new THREE.BoxGeometry(7.7, 4.8, 0.6), brickMat);
+      upperFrontRight.position.set(5.15, 7.2, d / 2);
+      const upperDoorLintel = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.2, 0.6), stoneTrimMat);
+      upperDoorLintel.position.set(0, 9.0, d / 2);
+      estateGroup.add(upperFrontLeft, upperFrontRight, upperDoorLintel);
+
+      // Upper floor window
+      [-5.2, 5.2].forEach((wx) => {
+        const uWin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.0, 0.1), windowMat);
+        uWin.position.set(wx, 7.2, d / 2 + 0.32);
+        estateGroup.add(uWin);
+      });
+
+      // OUTDOOR BALCONY (Overlooking town and road)
+      const balconyWidth = 8.0;
+      const balconyDepth = 3.6;
+      const balconyFloor = new THREE.Mesh(new THREE.BoxGeometry(balconyWidth, 0.3, balconyDepth), stoneTrimMat);
+      balconyFloor.position.set(0, 4.65, d / 2 + balconyDepth / 2);
+      balconyFloor.receiveShadow = true;
+      balconyFloor.castShadow = true;
+      estateGroup.add(balconyFloor);
+
+      // Balcony Support Stone Pillars from ground porch
+      [-3.6, 3.6].forEach((colX) => {
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 4.6, 10), stoneTrimMat);
+        pillar.position.set(colX, 2.3, d / 2 + balconyDepth - 0.3);
+        pillar.castShadow = true;
+        estateGroup.add(pillar);
+      });
+
+      // Balcony Railings
+      const balRailingFront = new THREE.Mesh(new THREE.BoxGeometry(balconyWidth, 1.05, 0.12), darkIronMat);
+      balRailingFront.position.set(0, 5.25, d / 2 + balconyDepth);
+      const balRailingLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, balconyDepth), darkIronMat);
+      balRailingLeft.position.set(-balconyWidth / 2, 5.25, d / 2 + balconyDepth / 2);
+      const balRailingRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, balconyDepth), darkIronMat);
+      balRailingRight.position.set(balconyWidth / 2, 5.25, d / 2 + balconyDepth / 2);
+      estateGroup.add(balRailingFront, balRailingLeft, balRailingRight);
+
+      // 3. ROOFTOP SUN TERRACE (Open rooftop deck for high vantage tactical spotting)
+      const terraceFloor = new THREE.Mesh(
+        new THREE.BoxGeometry(w, 0.4, d),
+        new THREE.MeshStandardMaterial({
+          map: ProceduralTextures.getRoofTileTexture(),
+          roughness: 0.6
+        })
+      );
+      terraceFloor.position.set(0, h, 0);
+      terraceFloor.receiveShadow = true;
+      estateGroup.add(terraceFloor);
+
+      // Terrace Parapet Wall & Stone Railings around all 4 sides
+      const parapetHeight = 1.1;
+      const parapetFront = new THREE.Mesh(new THREE.BoxGeometry(w, parapetHeight, 0.35), stoneTrimMat);
+      parapetFront.position.set(0, h + parapetHeight / 2, d / 2);
+      const parapetBack = new THREE.Mesh(new THREE.BoxGeometry(w, parapetHeight, 0.35), stoneTrimMat);
+      parapetBack.position.set(0, h + parapetHeight / 2, -d / 2);
+      const parapetLeft = new THREE.Mesh(new THREE.BoxGeometry(0.35, parapetHeight, d), stoneTrimMat);
+      parapetLeft.position.set(-w / 2, h + parapetHeight / 2, 0);
+      const parapetRight = new THREE.Mesh(new THREE.BoxGeometry(0.35, parapetHeight, d), stoneTrimMat);
+      parapetRight.position.set(w / 2, h + parapetHeight / 2, 0);
+      estateGroup.add(parapetFront, parapetBack, parapetLeft, parapetRight);
+
+      // Rooftop Pergola Canopy in Corner for Shade / Sniper Cover
+      const pergolaRoof = new THREE.Mesh(
+        new THREE.BoxGeometry(6, 0.15, 6),
+        new THREE.MeshStandardMaterial({ color: house.colorHex, roughness: 0.5 })
+      );
+      pergolaRoof.position.set(-w / 2 + 3.5, h + 3.0, -d / 2 + 3.5);
+      const pergolaPost1 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3.0, 8), darkIronMat);
+      pergolaPost1.position.set(-w / 2 + 1.0, h + 1.5, -d / 2 + 1.0);
+      const pergolaPost2 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3.0, 8), darkIronMat);
+      pergolaPost2.position.set(-w / 2 + 6.0, h + 1.5, -d / 2 + 6.0);
+      estateGroup.add(pergolaRoof, pergolaPost1, pergolaPost2);
+
+      // Front Ground Porch
+      const porch = new THREE.Mesh(new THREE.BoxGeometry(balconyWidth, 0.3, balconyDepth), stoneTrimMat);
+      porch.position.set(0, 0.15, d / 2 + balconyDepth / 2);
       estateGroup.add(porch);
 
-      // Glowing Welcome Lantern above Door
+      // Glowing Welcome Lantern above Entrance Door
       const lantern = new THREE.Mesh(
-        new THREE.SphereGeometry(0.3, 8, 8),
-        new THREE.MeshStandardMaterial({ color: house.colorHex, emissive: house.colorHex, emissiveIntensity: 1.5 })
+        new THREE.SphereGeometry(0.32, 10, 10),
+        new THREE.MeshStandardMaterial({ color: house.colorHex, emissive: house.colorHex, emissiveIntensity: 2.0 })
       );
-      lantern.position.set(0, 4.5, d / 2 + 0.5);
+      lantern.position.set(0, 4.3, d / 2 + 0.4);
       estateGroup.add(lantern);
 
-      const lanternLight = new THREE.PointLight(house.colorHex, 2.0, 10);
-      lanternLight.position.set(0, 4.5, d / 2 + 0.5);
+      const lanternLight = new THREE.PointLight(house.colorHex, 2.2, 12);
+      lanternLight.position.set(0, 4.3, d / 2 + 0.6);
       estateGroup.add(lanternLight);
 
       estateGroup.position.set(house.doorPos.x, 0, house.doorPos.z);
@@ -357,12 +537,12 @@ export class TownWorld {
         house.name,
         new THREE.Vector3(house.doorPos.x, 0, house.doorPos.z + d / 2 + 0.15),
         2.4,
-        4.0
+        3.8
       );
 
       this.houseDoorColliders.push({
         houseId: house.id,
-        pos: new THREE.Vector3(house.doorPos.x, 1.5, house.doorPos.z + d / 2 + 2)
+        pos: new THREE.Vector3(house.doorPos.x, 1.5, house.doorPos.z + d / 2 + 1.8)
       });
     });
   }
@@ -666,56 +846,156 @@ export class TownWorld {
     this.createHingedDoor('bank_door', 'City Hall & Bank Entrance', new THREE.Vector3(59, 0, 0), 2.8, 3.8, -Math.PI / 2, -Math.PI);
   }
 
-  private buildAmbushAlleysAndSlums() {
-    const brickMat = new THREE.MeshStandardMaterial({
-      map: ProceduralTextures.getBrickTexture('#571c18', '#374151'),
-      roughness: 0.85
-    });
-
-    const dumpsterMat = new THREE.MeshStandardMaterial({
-      color: 0x15803d,
-      roughness: 0.6,
-      metalness: 0.4
-    });
-
-    const crateMat = new THREE.MeshStandardMaterial({
+  private buildParksAndPromenades() {
+    const woodMat = new THREE.MeshStandardMaterial({
       map: ProceduralTextures.getWoodTexture(),
+      roughness: 0.6
+    });
+
+    const hedgeMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getFoliageTexture(),
+      roughness: 0.8
+    });
+
+    const stoneMat = new THREE.MeshStandardMaterial({
+      color: 0x94a3b8,
+      roughness: 0.6
+    });
+
+    const brickMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getBrickTexture('#7c2d12', '#94a3b8'),
       roughness: 0.7
     });
 
-    const alleyCoords = [
-      { x: -35, z: -35 },
-      { x: 35, z: -35 },
-      { x: -35, z: 35 },
-      { x: 35, z: 35 }
+    // 1. CENTRAL PARK GAZEBO PAVILION (0, 48) - Victorian Octagonal Garden Gazebo
+    const gazeboGroup = new THREE.Group();
+    gazeboGroup.position.set(0, 0, 48);
+
+    // Raised Octagonal Wooden Deck (diameter 8m)
+    const deck = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.4, 0.45, 8), woodMat);
+    deck.position.y = 0.22;
+    deck.receiveShadow = true;
+    gazeboGroup.add(deck);
+
+    // 6 Supporting Classical White Columns
+    for (let c = 0; c < 6; c++) {
+      const angle = (c / 6) * Math.PI * 2;
+      const colX = Math.cos(angle) * 3.6;
+      const colZ = Math.sin(angle) * 3.6;
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 3.6, 8), stoneMat);
+      col.position.set(colX, 2.05, colZ);
+      col.castShadow = true;
+      gazeboGroup.add(col);
+    }
+
+    // Gazebo Domed Conical Roof with Weathered Verdigris Copper
+    const roof = new THREE.Mesh(
+      new THREE.ConeGeometry(4.8, 2.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0x0d9488, roughness: 0.4, metalness: 0.3 })
+    );
+    roof.position.y = 4.9;
+    roof.castShadow = true;
+    gazeboGroup.add(roof);
+
+    // Finial Spike atop Gazebo
+    const finial = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.08, 1.2, 6),
+      new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9 })
+    );
+    finial.position.y = 6.4;
+    gazeboGroup.add(finial);
+
+    // Stone Garden Table with High-Tier Military Weapon Crate Inside
+    const parkTable = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.3, 0.9, 8), stoneMat);
+    parkTable.position.y = 0.65;
+    gazeboGroup.add(parkTable);
+
+    const lootCrate = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 0.6, 0.7),
+      new THREE.MeshStandardMaterial({ color: 0x15803d, metalness: 0.4, roughness: 0.5 })
+    );
+    lootCrate.position.set(0, 1.2, 0);
+    lootCrate.castShadow = true;
+    gazeboGroup.add(lootCrate);
+
+    // Warm Hanging Lantern in Gazebo
+    const gazLantern = new THREE.PointLight(0xfef08a, 2.0, 12);
+    gazLantern.position.set(0, 3.4, 0);
+    gazeboGroup.add(gazLantern);
+
+    this.group.add(gazeboGroup);
+
+    // 2. FORMAL GARDEN HEDGES & FLOWERBEDS
+    const hedgePlacements = [
+      { x: -18, z: 22, w: 14, d: 1.2 },
+      { x: 18, z: 22, w: 14, d: 1.2 },
+      { x: -18, z: 38, w: 14, d: 1.2 },
+      { x: 18, z: 38, w: 14, d: 1.2 },
+      { x: -24, z: 30, w: 1.2, d: 16 },
+      { x: 24, z: 30, w: 1.2, d: 16 }
     ];
 
-    alleyCoords.forEach((coord) => {
-      const alleyGroup = new THREE.Group();
+    hedgePlacements.forEach((h) => {
+      const hedge = new THREE.Mesh(new THREE.BoxGeometry(h.w, 1.2, h.d), hedgeMat);
+      hedge.position.set(h.x, 0.6, h.z);
+      hedge.castShadow = true;
+      this.group.add(hedge);
+    });
 
-      const wall1 = new THREE.Mesh(new THREE.BoxGeometry(18, 12, 4), brickMat);
-      wall1.position.set(-5, 6, 0);
-      wall1.castShadow = true;
-      alleyGroup.add(wall1);
+    // Colorful Flowerbed Tufts (Roses & Lavender)
+    const flowerSpots = [
+      { x: -18, z: 30, color: 0xf43f5e },
+      { x: 18, z: 30, color: 0x818cf8 },
+      { x: -14, z: -32, color: 0xfbbf24 },
+      { x: 14, z: -32, color: 0xf43f5e }
+    ];
 
-      const wall2 = new THREE.Mesh(new THREE.BoxGeometry(18, 12, 4), brickMat);
-      wall2.position.set(5, 6, 8);
-      wall2.castShadow = true;
-      alleyGroup.add(wall2);
+    flowerSpots.forEach((f) => {
+      const bed = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.4, 2.6, 0.35, 12),
+        brickMat
+      );
+      bed.position.set(f.x, 0.17, f.z);
+      this.group.add(bed);
 
-      const dumpster = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 1.4), dumpsterMat);
-      dumpster.position.set(-1, 0.7, 4);
-      dumpster.castShadow = true;
-      alleyGroup.add(dumpster);
+      const petals = new THREE.Mesh(
+        new THREE.SphereGeometry(2.1, 8, 8),
+        new THREE.MeshStandardMaterial({ color: f.color, roughness: 0.6 })
+      );
+      petals.scale.set(1.0, 0.35, 1.0);
+      petals.position.set(f.x, 0.45, f.z);
+      this.group.add(petals);
+    });
 
-      const crate1 = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), crateMat);
-      crate1.position.set(2, 0.5, 4);
-      const crate2 = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), crateMat);
-      crate2.position.set(2, 1.5, 4);
-      alleyGroup.add(crate1, crate2);
+    // 3. VICTORIAN CAST-IRON STREETLAMPS
+    const lampMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 });
+    const lampCoords = [
+      { x: -12, z: -12 }, { x: 12, z: -12 },
+      { x: -12, z: 12 }, { x: 12, z: 12 },
+      { x: -12, z: -55 }, { x: 12, z: -55 },
+      { x: -55, z: -12 }, { x: -55, z: 12 },
+      { x: 55, z: -12 }, { x: 55, z: 12 }
+    ];
 
-      alleyGroup.position.set(coord.x, 0, coord.z);
-      this.group.add(alleyGroup);
+    lampCoords.forEach((lp) => {
+      const lampGroup = new THREE.Group();
+      lampGroup.position.set(lp.x, 0, lp.z);
+
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 4.2, 8), lampMat);
+      pole.position.y = 2.1;
+      pole.castShadow = true;
+
+      const globe = new THREE.Mesh(
+        new THREE.SphereGeometry(0.25, 8, 8),
+        new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfef08a, emissiveIntensity: 1.8 })
+      );
+      globe.position.y = 4.3;
+
+      const light = new THREE.PointLight(0xfef08a, 1.5, 14);
+      light.position.y = 4.3;
+
+      lampGroup.add(pole, globe, light);
+      this.group.add(lampGroup);
     });
   }
 

@@ -462,6 +462,53 @@ export class EntityMeshFactory {
 
       group.add(slide, barrel, grip, triggerGuard);
       group.rotation.x = Math.PI / 2;
+    } else if (type === 'rifle') {
+      // Tactical Bolt-Action Scoped Sniper Rifle
+      const rifleMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, metalness: 0.85, roughness: 0.25 });
+      const stockMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.6 });
+      const scopeMat = new THREE.MeshStandardMaterial({ color: 0x09090b, metalness: 0.9, roughness: 0.15 });
+
+      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.36), rifleMat);
+      receiver.position.set(0, 0.02, 0);
+
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.09, 0.28), stockMat);
+      stock.position.set(0, -0.01, 0.28);
+
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.52, 8), rifleMat);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0.03, -0.38);
+
+      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.28, 10), scopeMat);
+      scope.rotation.x = Math.PI / 2;
+      scope.position.set(0, 0.08, -0.04);
+
+      group.add(receiver, stock, barrel, scope);
+      group.rotation.x = Math.PI / 2;
+    } else if (type === 'shotgun') {
+      // 12-Gauge Tactical Pump-Action Shotgun
+      const gunmetalMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.25 });
+      const pumpMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.85 });
+
+      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.07, 0.32), gunmetalMat);
+      receiver.position.set(0, 0.02, 0);
+
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.26), pumpMat);
+      stock.position.set(0, -0.01, 0.26);
+
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.44, 8), gunmetalMat);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0.04, -0.34);
+
+      const magTube = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.38, 8), gunmetalMat);
+      magTube.rotation.x = Math.PI / 2;
+      magTube.position.set(0, 0.01, -0.32);
+
+      const pump = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.16, 8), pumpMat);
+      pump.rotation.x = Math.PI / 2;
+      pump.position.set(0, 0.01, -0.22);
+
+      group.add(receiver, stock, barrel, magTube, pump);
+      group.rotation.x = Math.PI / 2;
     }
 
     return group;
@@ -618,6 +665,16 @@ export class EntityMeshFactory {
       gun.scale.set(1.4, 1.4, 1.4);
       group.add(gun);
       group.position.y = 0.3;
+    } else if (type === 'rifle') {
+      const rifle = this.createWeaponMesh('rifle');
+      rifle.scale.set(1.2, 1.2, 1.2);
+      group.add(rifle);
+      group.position.y = 0.35;
+    } else if (type === 'shotgun') {
+      const shotgun = this.createWeaponMesh('shotgun');
+      shotgun.scale.set(1.2, 1.2, 1.2);
+      group.add(shotgun);
+      group.position.y = 0.35;
     } else {
       // Medical First Aid Case
       const box = new THREE.Mesh(
@@ -727,9 +784,10 @@ export class EntityMeshFactory {
   }
 
   /**
-   * Poses natural articulated walking/running gait with synchronized hips, knees, and swinging arms
+   * Poses natural articulated walking/running gait with synchronized hips, knees, and swinging arms.
+   * Features realistic human biomechanics: hip sway, spine counter-twist, knee flexion, and arm swing.
    */
-  public static animateWalkingHuman(character: THREE.Group, time: number, isRunning: boolean = false) {
+  public static animateWalkingHuman(character: THREE.Group, phase: number, isRunning: boolean = false) {
     const leftLeg = character.getObjectByName('leftLeg');
     const rightLeg = character.getObjectByName('rightLeg');
     const leftKnee = character.getObjectByName('leftKnee');
@@ -738,29 +796,109 @@ export class EntityMeshFactory {
     const rightArm = character.getObjectByName('rightArm');
     const leftForearm = character.getObjectByName('leftForearm');
     const rightForearm = character.getObjectByName('rightForearm');
+    const chestGroup = character.children.find(c => c.type === 'Group' && c.position.y > 1.0 && c.position.y < 1.2);
+    const head = character.getObjectByName('headGroup');
 
-    const freq = isRunning ? 11.0 : 7.0;
-    const stride = isRunning ? 0.85 : 0.55;
-    const legPhase = Math.sin(time * freq);
+    const stride = isRunning ? 0.75 : 0.48;
+    const sinVal = Math.sin(phase);
+    const cosVal = Math.cos(phase);
 
-    // Thigh rotation
-    if (leftLeg) leftLeg.rotation.x = legPhase * stride;
-    if (rightLeg) rightLeg.rotation.x = -legPhase * stride;
+    // 1. Thigh Swings (Alternating Forward / Backward)
+    if (leftLeg) {
+      leftLeg.rotation.x = sinVal * stride;
+      leftLeg.rotation.z = -0.03;
+    }
+    if (rightLeg) {
+      rightLeg.rotation.x = -sinVal * stride;
+      rightLeg.rotation.z = 0.03;
+    }
 
-    // Knee flex on backstroke
+    // 2. Realistic Knee Flexion (Bends during swing-through & backstroke)
     if (leftKnee) {
-      leftKnee.rotation.x = legPhase > 0 ? legPhase * stride * 0.9 : 0.08;
+      leftKnee.rotation.x = sinVal < 0
+        ? -sinVal * stride * 1.25 // Backstroke lift
+        : Math.max(0.04, sinVal * stride * 0.4); // Forward plant cushion
     }
     if (rightKnee) {
-      rightKnee.rotation.x = legPhase < 0 ? -legPhase * stride * 0.9 : 0.08;
+      rightKnee.rotation.x = sinVal > 0
+        ? sinVal * stride * 1.25
+        : Math.max(0.04, -sinVal * stride * 0.4);
     }
 
-    // Arm counter-swing
-    const armStride = isRunning ? 0.95 : 0.45;
-    if (leftArm) leftArm.rotation.x = -legPhase * armStride;
-    if (rightArm) rightArm.rotation.x = legPhase * armStride;
+    // 3. Torso Counter-Twist & Dynamic Forward Lean
+    if (chestGroup) {
+      chestGroup.rotation.y = -sinVal * (isRunning ? 0.08 : 0.04); // Counter spine twist
+      chestGroup.rotation.x = isRunning ? 0.16 : 0.04; // Athletic forward lean
+      chestGroup.rotation.z = cosVal * 0.02; // Subtle side shift
+    }
 
-    if (leftForearm) leftForearm.rotation.x = isRunning ? -0.7 : -0.25;
-    if (rightForearm) rightForearm.rotation.x = isRunning ? -0.7 : -0.25;
+    // 4. Arm Counter-Swings (Opposite to legs)
+    const armStride = isRunning ? 0.85 : 0.42;
+    if (leftArm) {
+      leftArm.rotation.x = -sinVal * armStride;
+      leftArm.rotation.z = isRunning ? 0.12 : 0.06;
+    }
+    if (rightArm) {
+      rightArm.rotation.x = sinVal * armStride;
+      rightArm.rotation.z = isRunning ? -0.12 : -0.06;
+    }
+
+    // Elbow flexion
+    if (leftForearm) leftForearm.rotation.x = isRunning ? -0.7 : -0.22;
+    if (rightForearm) rightForearm.rotation.x = isRunning ? -0.7 : -0.22;
+
+    // 5. Head Balance
+    if (head && chestGroup) {
+      head.rotation.x = -chestGroup.rotation.x * 0.5;
+      head.rotation.y = -chestGroup.rotation.y * 0.5;
+    }
+  }
+
+  /**
+   * Natural human idle breathing and relaxed standing stance
+   */
+  public static animateIdleHuman(character: THREE.Group, time: number) {
+    const leftLeg = character.getObjectByName('leftLeg');
+    const rightLeg = character.getObjectByName('rightLeg');
+    const leftKnee = character.getObjectByName('leftKnee');
+    const rightKnee = character.getObjectByName('rightKnee');
+    const leftArm = character.getObjectByName('leftArm');
+    const rightArm = character.getObjectByName('rightArm');
+    const leftForearm = character.getObjectByName('leftForearm');
+    const rightForearm = character.getObjectByName('rightForearm');
+    const chestGroup = character.children.find(c => c.type === 'Group' && c.position.y > 1.0 && c.position.y < 1.2);
+    const head = character.getObjectByName('headGroup');
+
+    // Neutral straight leg stance
+    if (leftLeg) { leftLeg.rotation.x = 0; leftLeg.rotation.z = -0.03; }
+    if (rightLeg) { rightLeg.rotation.x = 0; rightLeg.rotation.z = 0.03; }
+    if (leftKnee) leftKnee.rotation.x = 0.04;
+    if (rightKnee) rightKnee.rotation.x = 0.04;
+
+    // Organic breathing cycle (~14 breaths/min)
+    const breath = Math.sin(time * 2.2);
+    if (chestGroup) {
+      chestGroup.rotation.x = breath * 0.012;
+      chestGroup.rotation.y = 0;
+      chestGroup.rotation.z = 0;
+      chestGroup.scale.set(1.0 + breath * 0.008, 1.0 + breath * 0.006, 1.0 + breath * 0.01);
+    }
+
+    // Natural resting arms
+    if (leftArm) {
+      leftArm.rotation.x = breath * 0.02;
+      leftArm.rotation.z = 0.08;
+    }
+    if (rightArm) {
+      rightArm.rotation.x = -breath * 0.02;
+      rightArm.rotation.z = -0.08;
+    }
+    if (leftForearm) leftForearm.rotation.x = -0.15;
+    if (rightForearm) rightForearm.rotation.x = -0.15;
+
+    if (head) {
+      head.rotation.x = breath * 0.008;
+      head.rotation.y = Math.sin(time * 0.5) * 0.04; // Gentle ambient glance
+    }
   }
 }

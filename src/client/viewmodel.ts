@@ -10,6 +10,8 @@ export class FPVViewModel {
   private fistsGroup: THREE.Group;
   private knifeGroup: THREE.Group;
   private pistolGroup: THREE.Group;
+  private rifleGroup: THREE.Group;
+  private shotgunGroup: THREE.Group;
   private muzzleFlashGroup: THREE.Group;
 
   // State
@@ -41,15 +43,140 @@ export class FPVViewModel {
     this.fistsGroup = this.createFistsModel();
     this.knifeGroup = this.createKnifeModel();
     this.pistolGroup = this.createPistolModel();
+    this.rifleGroup = this.createRifleModel();
+    this.shotgunGroup = this.createShotgunModel();
     this.muzzleFlashGroup = this.createMuzzleFlash();
 
     this.weaponSlotGroup.add(this.fistsGroup);
     this.weaponSlotGroup.add(this.knifeGroup);
     this.weaponSlotGroup.add(this.pistolGroup);
+    this.weaponSlotGroup.add(this.rifleGroup);
+    this.weaponSlotGroup.add(this.shotgunGroup);
     this.group.add(this.muzzleFlashGroup);
 
     this.setWeapon('fists');
     this.camera.add(this.group);
+  }
+
+  private createRifleModel(): THREE.Group {
+    const group = new THREE.Group();
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xdfa081, roughness: 0.6, metalness: 0.05 });
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.75 });
+    const rifleMat = new THREE.MeshStandardMaterial({ color: 0x1c1917, metalness: 0.85, roughness: 0.25 });
+    const stockMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.6 }); // Dark walnut wood stock
+    const scopeMat = new THREE.MeshStandardMaterial({ color: 0x09090b, metalness: 0.9, roughness: 0.15 });
+
+    // Arms in two-handed rifle stance
+    const rSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.048, 0.25, 10), sleeveMat);
+    rSleeve.rotation.x = Math.PI / 2.3;
+    rSleeve.position.set(0.06, -0.06, 0.12);
+
+    const rHand = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.05, 0.06), skinMat);
+    rHand.position.set(0.04, -0.01, -0.02);
+
+    const lSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.046, 0.32, 10), sleeveMat);
+    lSleeve.rotation.x = Math.PI / 2.8;
+    lSleeve.rotation.y = -0.3;
+    lSleeve.position.set(-0.16, -0.08, 0.02);
+
+    const lHand = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.048, 0.055), skinMat);
+    lHand.position.set(-0.02, 0.01, -0.22); // Supporting forend
+    lHand.rotation.y = 0.2;
+
+    // Sniper Body / Receiver & Stock
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.055, 0.32), rifleMat);
+    receiver.position.set(0.0, 0.045, -0.12);
+
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.08, 0.26), stockMat);
+    stock.position.set(0.0, 0.02, 0.12);
+
+    // Long Barrel & Muzzle Brake
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.42, 8), rifleMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0.0, 0.052, -0.42);
+
+    const muzzleBrake = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.022, 0.06), rifleMat);
+    muzzleBrake.position.set(0.0, 0.052, -0.64);
+
+    // High-Power Optic Sniper Scope
+    const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.26, 12), scopeMat);
+    scopeTube.rotation.x = Math.PI / 2;
+    scopeTube.position.set(0.0, 0.095, -0.14);
+
+    const scopeObjective = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.018, 0.07, 12), scopeMat);
+    scopeObjective.rotation.x = Math.PI / 2;
+    scopeObjective.position.set(0.0, 0.095, -0.27);
+
+    const scopeOcular = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.06, 12), scopeMat);
+    scopeOcular.rotation.x = Math.PI / 2;
+    scopeOcular.position.set(0.0, 0.095, -0.01);
+
+    const scopeMount1 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.03, 0.02), rifleMat);
+    scopeMount1.position.set(0.0, 0.075, -0.20);
+    const scopeMount2 = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.03, 0.02), rifleMat);
+    scopeMount2.position.set(0.0, 0.075, -0.08);
+
+    // Bolt handle
+    const boltHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.06, 6), rifleMat);
+    boltHandle.rotation.z = Math.PI / 3;
+    boltHandle.position.set(0.03, 0.06, -0.04);
+
+    group.add(
+      rSleeve, rHand, lSleeve, lHand,
+      receiver, stock, barrel, muzzleBrake,
+      scopeTube, scopeObjective, scopeOcular, scopeMount1, scopeMount2, boltHandle
+    );
+    return group;
+  }
+
+  private createShotgunModel(): THREE.Group {
+    const group = new THREE.Group();
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xdfa081, roughness: 0.6, metalness: 0.05 });
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.75 });
+    const gunmetalMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.25 });
+    const pumpMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.85 });
+
+    // Arms
+    const rSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.048, 0.25, 10), sleeveMat);
+    rSleeve.rotation.x = Math.PI / 2.3;
+    rSleeve.position.set(0.06, -0.06, 0.12);
+
+    const rHand = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.05, 0.06), skinMat);
+    rHand.position.set(0.03, -0.01, -0.02);
+
+    const lSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.046, 0.3, 10), sleeveMat);
+    lSleeve.rotation.x = Math.PI / 2.6;
+    lSleeve.rotation.y = -0.25;
+    lSleeve.position.set(-0.14, -0.07, 0.04);
+
+    const lHand = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.048, 0.055), skinMat);
+    lHand.position.set(-0.01, 0.01, -0.2); // Gripping the pump
+    lHand.rotation.y = 0.2;
+
+    // Shotgun Receiver & Stock
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.065, 0.28), gunmetalMat);
+    receiver.position.set(0.0, 0.045, -0.1);
+
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.09, 0.24), pumpMat);
+    stock.position.set(0.0, 0.01, 0.12);
+
+    // Heavy 12-Gauge Barrel
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.38, 10), gunmetalMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0.0, 0.06, -0.38);
+
+    // Magazine Tube Underneath
+    const magTube = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 10), gunmetalMat);
+    magTube.rotation.x = Math.PI / 2;
+    magTube.position.set(0.0, 0.032, -0.36);
+
+    // Ribbed Polymer Pump Slide
+    const pumpSlide = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.14, 8), pumpMat);
+    pumpSlide.rotation.x = Math.PI / 2;
+    pumpSlide.position.set(0.0, 0.032, -0.24);
+
+    group.add(rSleeve, rHand, lSleeve, lHand, receiver, stock, barrel, magTube, pumpSlide);
+    return group;
   }
 
   private createFistsModel(): THREE.Group {
@@ -231,6 +358,8 @@ export class FPVViewModel {
     this.fistsGroup.visible = type === 'fists';
     this.knifeGroup.visible = type === 'knife';
     this.pistolGroup.visible = type === 'pistol';
+    this.rifleGroup.visible = type === 'rifle';
+    this.shotgunGroup.visible = type === 'shotgun';
   }
 
   public triggerAttack(type: ItemType) {
@@ -242,6 +371,16 @@ export class FPVViewModel {
       this.recoilZ = 0.05;
       this.recoilRotX = 0.22;
       this.muzzleFlashTimer = 0.06;
+      this.muzzleFlashGroup.visible = true;
+    } else if (type === 'rifle') {
+      this.recoilZ = 0.09;
+      this.recoilRotX = 0.35;
+      this.muzzleFlashTimer = 0.08;
+      this.muzzleFlashGroup.visible = true;
+    } else if (type === 'shotgun') {
+      this.recoilZ = 0.11;
+      this.recoilRotX = 0.40;
+      this.muzzleFlashTimer = 0.09;
       this.muzzleFlashGroup.visible = true;
     }
   }
@@ -256,7 +395,7 @@ export class FPVViewModel {
     currentYaw: number,
     currentPitch: number
   ) {
-    if (isThirdPerson) {
+    if (isThirdPerson || (this.currentWeapon === 'rifle' && isAiming)) {
       this.group.visible = false;
       return;
     }
@@ -292,9 +431,10 @@ export class FPVViewModel {
     this.group.position.y += bobY + this.currentSwayY;
 
     // 4. Attack Animation / Recoil Recovery
-    if (this.attackType === 'pistol') {
-      this.recoilZ = THREE.MathUtils.lerp(this.recoilZ, 0, Math.min(1.0, delta * 16.0));
-      this.recoilRotX = THREE.MathUtils.lerp(this.recoilRotX, 0, Math.min(1.0, delta * 18.0));
+    if (this.attackType === 'pistol' || this.attackType === 'rifle' || this.attackType === 'shotgun') {
+      const recSpeed = this.attackType === 'rifle' ? 10.0 : (this.attackType === 'shotgun' ? 12.0 : 16.0);
+      this.recoilZ = THREE.MathUtils.lerp(this.recoilZ, 0, Math.min(1.0, delta * recSpeed));
+      this.recoilRotX = THREE.MathUtils.lerp(this.recoilRotX, 0, Math.min(1.0, delta * (recSpeed + 2.0)));
       this.weaponSlotGroup.position.z = this.recoilZ;
       this.weaponSlotGroup.rotation.x = this.recoilRotX;
 

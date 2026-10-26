@@ -10,7 +10,7 @@ export interface Vector3D {
   z: number;
 }
 
-export type ItemType = 'fists' | 'knife' | 'pistol' | 'ammo' | 'key' | 'bandage';
+export type ItemType = 'fists' | 'knife' | 'pistol' | 'rifle' | 'shotgun' | 'ammo' | 'key' | 'bandage';
 
 export interface InventoryItem {
   id: string;

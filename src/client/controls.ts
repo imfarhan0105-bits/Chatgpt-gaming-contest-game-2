@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { checkObstacleCollision, getTerrainHeight, PLAYER_CROUCH_SPEED, PLAYER_SPRINT_SPEED, PLAYER_WALK_SPEED } from '../shared/constants.ts';
+import type { ItemType } from '../shared/types.ts';
 import { TownWorld } from './town.ts';
 
 export class PlayerControls {
@@ -20,6 +21,7 @@ export class PlayerControls {
   public isThirdPerson: boolean = false;
   public isAiming: boolean = false;
   public isCrouching: boolean = false;
+  public currentWeapon: ItemType = 'fists';
 
   // Smooth spring-arm third-person settings
   private targetCamDistance: number = 0;
@@ -66,8 +68,10 @@ export class PlayerControls {
       const movementX = event.movementX || 0;
       const movementY = event.movementY || 0;
 
-      // Smooth controllable sensitivity
-      const sensitivity = this.isAiming ? 0.0014 : 0.0020;
+      // Smooth controllable sensitivity (Lowered during high-power sniper optic zoom)
+      const sensitivity = this.isAiming
+        ? (this.currentWeapon === 'rifle' ? 0.0005 : 0.0014)
+        : 0.0020;
       this.targetYaw -= movementX * sensitivity;
       this.targetPitch -= movementY * sensitivity;
 
@@ -208,7 +212,7 @@ export class PlayerControls {
       moveVector.x = dirX * speed;
       moveVector.z = dirZ * speed;
 
-      this.walkCycleTimer += delta * (isSprinting ? 12 : 7.5);
+      this.walkCycleTimer += delta * (isSprinting ? 10.5 : 6.2);
     } else {
       this.walkCycleTimer = 0;
     }
@@ -254,7 +258,10 @@ export class PlayerControls {
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
-    this.camera.fov = this.isAiming ? 48 : 72;
+    const targetFov = this.isAiming
+      ? (this.currentWeapon === 'rifle' ? 16 : 48)
+      : 72;
+    this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, Math.min(1.0, delta * 18.0));
     this.camera.updateProjectionMatrix();
 
     if (!this.isThirdPerson) {

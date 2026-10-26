@@ -346,30 +346,34 @@ export class GameRoom {
 
       // 3. Inside Police HQ & Courthouse (0, 75)
       { type: 'pistol', name: '9mm Tactical Police Pistol', ammo: 12, pos: { x: 0, y: 0.8, z: 83 } },
+      { type: 'shotgun', name: 'Police 12-Gauge Riot Shotgun', ammo: 6, pos: { x: -4, y: 0.8, z: 83 } },
       { type: 'bandage', name: 'Police Medical Pack', pos: { x: 2, y: 0.8, z: 72 } },
-      { type: 'pistol', name: 'Officer Backup Handgun', ammo: 12, pos: { x: -4, y: 0.8, z: 83 } },
 
       // 4. Inside City Hall & Bank (75, 0)
       { type: 'pistol', name: '9mm Vault Pistol', ammo: 12, pos: { x: 78, y: 0.8, z: 0 } },
       { type: 'knife', name: 'Bank Guard Dagger', pos: { x: 84, y: 0.8, z: 6 } },
 
-      // 5. On the 4 Player Estate Porches & Grounds
+      // 5. Four Player Estate Rooftop Terraces & Balconies (High vantage sniper spots)
+      { type: 'rifle', name: '7.62mm Scoped Sniper Rifle', ammo: 5, pos: { x: -80, y: 5.0, z: -70 } }, // Cobalt Balcony
+      { type: 'shotgun', name: '12-Gauge Home Defense Shotgun', ammo: 6, pos: { x: -82, y: 0.6, z: -80 } }, // Cobalt Living Room
+      { type: 'rifle', name: '7.62mm Marksman Sniper Rifle', ammo: 5, pos: { x: 80, y: 10.0, z: -80 } }, // Crimson Terrace
+      { type: 'shotgun', name: '12-Gauge Tactical Shotgun', ammo: 6, pos: { x: -80, y: 5.0, z: 90 } }, // Emerald Balcony
+      { type: 'rifle', name: '7.62mm High-Optic Sniper', ammo: 5, pos: { x: 80, y: 10.0, z: 80 } }, // Amber Terrace
       { type: 'pistol', name: 'Cobalt Estate Handgun', ammo: 12, pos: { x: -80, y: 0.4, z: -73 } },
       { type: 'knife', name: 'Crimson Manor Dirk', pos: { x: 80, y: 0.4, z: -73 } },
       { type: 'knife', name: 'Emerald Hunting Knife', pos: { x: -80, y: 0.4, z: 87 } },
       { type: 'pistol', name: 'Amber Lodge Pistol', ammo: 12, pos: { x: 80, y: 0.4, z: 87 } },
 
-      // 6. Central Plaza & Promenade
+      // 6. Central Park Gazebo Pavilion & Gardens
+      { type: 'rifle', name: 'Gazebo 7.62mm Sniper Rifle', ammo: 5, pos: { x: 0, y: 1.4, z: 48 } },
+      { type: 'shotgun', name: '12-Gauge Park Defense Shotgun', ammo: 6, pos: { x: 2.5, y: 0.6, z: 48 } },
+      { type: 'rifle', name: 'River Bridge Sniper Stash', ammo: 5, pos: { x: 0, y: 2.2, z: -45 } },
+
+      // 7. Central Plaza & Landmarks
       { type: 'pistol', name: 'Fountain Stash Pistol', ammo: 12, pos: { x: 0, y: 0.4, z: 18 } },
       { type: 'bandage', name: 'Park First Aid Kit', pos: { x: -12, y: 0.6, z: 20 } },
       { type: 'knife', name: 'Bronze Monument Trench Knife', pos: { x: 50, y: 0.4, z: 46 } },
-      { type: 'bandage', name: 'Cathedral Medical Pack', pos: { x: 0, y: 0.4, z: -20 } },
-
-      // 7. Ambush Alleys & Slums
-      { type: 'knife', name: 'Northwest Alley Shiv', pos: { x: -35, y: 0.4, z: -30 } },
-      { type: 'pistol', name: 'Underworld Alley Pistol', ammo: 12, pos: { x: 35, y: 0.4, z: -30 } },
-      { type: 'knife', name: 'Southwest Alley Stiletto', pos: { x: -35, y: 0.4, z: 40 } },
-      { type: 'knife', name: 'Southeast Ambush Blade', pos: { x: 35, y: 0.4, z: 40 } }
+      { type: 'bandage', name: 'Cathedral Medical Pack', pos: { x: 0, y: 0.4, z: -20 } }
     ];
 
     weaponSpots.forEach((spot, idx) => {
@@ -474,16 +478,22 @@ export class GameRoom {
         moveZ = -Math.cos(rooster.yaw) * ROOSTER_WALK_SPEED * delta;
       }
 
-      const testX = rooster.pos.x + moveX;
-      const testZ = rooster.pos.z + moveZ;
+      // Impenetrable Wall & Obstacle Sliding for Roosters
+      const canMoveX = !checkObstacleCollision(rooster.pos.x + moveX, rooster.pos.z, 0.55);
+      const canMoveZ = !checkObstacleCollision(rooster.pos.x, rooster.pos.z + moveZ, 0.55);
 
-      if (!checkObstacleCollision(testX, testZ, 0.45)) {
-        rooster.pos.x = testX;
-        rooster.pos.z = testZ;
-        rooster.pos.y = getTerrainHeight(rooster.pos.x, rooster.pos.z);
-      } else {
-        rooster.yaw = Math.random() * Math.PI * 2;
+      if (canMoveX) {
+        rooster.pos.x += moveX;
       }
+      if (canMoveZ) {
+        rooster.pos.z += moveZ;
+      }
+
+      if (!canMoveX || !canMoveZ) {
+        rooster.yaw += Math.PI * 0.65;
+      }
+
+      rooster.pos.y = getTerrainHeight(rooster.pos.x, rooster.pos.z);
 
       const half = TOWN_SIZE / 2 - 6;
       rooster.pos.x = Math.max(-half, Math.min(half, rooster.pos.x));
@@ -621,16 +631,17 @@ export class GameRoom {
     const currentItem = player.inventory[player.activeSlot];
     const weaponType: ItemType = currentItem ? currentItem.type : 'fists';
 
-    if (weaponType === 'pistol') {
+    if (weaponType === 'pistol' || weaponType === 'rifle' || weaponType === 'shotgun') {
       if (!currentItem?.ammo || currentItem.ammo <= 0) {
         return;
       }
       currentItem.ammo--;
 
+      const stats = WEAPON_STATS[weaponType];
       const origin = aimOrigin || { x: player.pos.x, y: player.pos.y + 1.6, z: player.pos.z };
-      const dirX = aimDirection ? aimDirection.x : -Math.sin(player.yaw) * Math.cos(player.pitch);
-      const dirY = aimDirection ? aimDirection.y : -Math.sin(player.pitch);
-      const dirZ = aimDirection ? aimDirection.z : -Math.cos(player.yaw) * Math.cos(player.pitch);
+      const baseDirX = aimDirection ? aimDirection.x : -Math.sin(player.yaw) * Math.cos(player.pitch);
+      const baseDirY = aimDirection ? aimDirection.y : -Math.sin(player.pitch);
+      const baseDirZ = aimDirection ? aimDirection.z : -Math.cos(player.yaw) * Math.cos(player.pitch);
 
       this.broadcast({
         type: 'gunshot_event',
@@ -638,95 +649,105 @@ export class GameRoom {
         pos: origin
       });
 
-      const dirLen = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
-      const ndx = dirX / dirLen;
-      const ndz = dirZ / dirLen;
+      const pelletCount = weaponType === 'shotgun' ? 8 : 1;
+      const damagePerPellet = stats.damage;
 
-      let hitSomething = false;
-      let hitTargetPos = {
-        x: origin.x + ndx * WEAPON_STATS.pistol.range,
-        y: origin.y + dirY * WEAPON_STATS.pistol.range,
-        z: origin.z + ndz * WEAPON_STATS.pistol.range
-      };
+      for (let p = 0; p < pelletCount; p++) {
+        const spread = weaponType === 'shotgun' ? (Math.random() - 0.5) * 0.12 : 0;
+        const dirX = baseDirX + spread;
+        const dirY = baseDirY + (weaponType === 'shotgun' ? (Math.random() - 0.5) * 0.12 : 0);
+        const dirZ = baseDirZ + spread;
 
-      for (const rooster of this.roosters.values()) {
-        if (rooster.isKnockedOut) continue;
-        const dx = rooster.pos.x - origin.x;
-        const dz = rooster.pos.z - origin.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
+        const dirLen = Math.sqrt(dirX * dirX + dirZ * dirZ) || 1;
+        const ndx = dirX / dirLen;
+        const ndz = dirZ / dirLen;
 
-        if (dist > 0.1 && dist <= WEAPON_STATS.pistol.range) {
-          const dot = (dx * ndx + dz * ndz) / dist;
-          if (dot > 0.88) {
-            rooster.health -= WEAPON_STATS.pistol.damage;
-            hitSomething = true;
-            hitTargetPos = { x: rooster.pos.x, y: rooster.pos.y + 0.5, z: rooster.pos.z };
+        let hitSomething = false;
+        let hitTargetPos = {
+          x: origin.x + ndx * stats.range,
+          y: origin.y + dirY * stats.range,
+          z: origin.z + ndz * stats.range
+        };
 
-            if (rooster.health <= 0) {
-              rooster.health = 0;
-              rooster.isKnockedOut = true;
-              this.dropRoosterKey(rooster);
-            }
-            break;
-          }
-        }
-      }
-
-      if (!hitSomething) {
-        for (const npc of this.npcs.values()) {
-          if (npc.health <= 0) continue;
-          const dx = npc.pos.x - origin.x;
-          const dz = npc.pos.z - origin.z;
+        for (const rooster of this.roosters.values()) {
+          if (rooster.isKnockedOut) continue;
+          const dx = rooster.pos.x - origin.x;
+          const dz = rooster.pos.z - origin.z;
           const dist = Math.sqrt(dx * dx + dz * dz);
 
-          if (dist > 0.1 && dist <= WEAPON_STATS.pistol.range) {
+          if (dist > 0.1 && dist <= stats.range) {
             const dot = (dx * ndx + dz * ndz) / dist;
-            if (dot > 0.88) {
-              npc.health -= WEAPON_STATS.pistol.damage;
+            if (dot > (weaponType === 'rifle' ? 0.94 : (weaponType === 'shotgun' ? 0.82 : 0.88))) {
+              rooster.health -= damagePerPellet;
               hitSomething = true;
-              hitTargetPos = { x: npc.pos.x, y: npc.pos.y + 1.2, z: npc.pos.z };
+              hitTargetPos = { x: rooster.pos.x, y: rooster.pos.y + 0.5, z: rooster.pos.z };
 
-              if (npc.health <= 0) {
-                npc.health = 0;
-                this.applyWrongfulKill(player, npc.faction);
+              if (rooster.health <= 0) {
+                rooster.health = 0;
+                rooster.isKnockedOut = true;
+                this.dropRoosterKey(rooster);
               }
               break;
             }
           }
         }
-      }
 
-      if (!hitSomething) {
-        for (const other of this.players.values()) {
-          if (other.id === player.id || other.isKnockedOut) continue;
-          const dx = other.pos.x - origin.x;
-          const dz = other.pos.z - origin.z;
-          const dist = Math.sqrt(dx * dx + dz * dz);
+        if (!hitSomething) {
+          for (const npc of this.npcs.values()) {
+            if (npc.health <= 0) continue;
+            const dx = npc.pos.x - origin.x;
+            const dz = npc.pos.z - origin.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
 
-          if (dist > 0.1 && dist <= WEAPON_STATS.pistol.range) {
-            const dot = (dx * ndx + dz * ndz) / dist;
-            if (dot > 0.88) {
-              other.health -= WEAPON_STATS.pistol.damage;
-              hitSomething = true;
-              hitTargetPos = { x: other.pos.x, y: other.pos.y + 1.2, z: other.pos.z };
+            if (dist > 0.1 && dist <= stats.range) {
+              const dot = (dx * ndx + dz * ndz) / dist;
+              if (dot > (weaponType === 'rifle' ? 0.94 : (weaponType === 'shotgun' ? 0.82 : 0.88))) {
+                npc.health -= damagePerPellet;
+                hitSomething = true;
+                hitTargetPos = { x: npc.pos.x, y: npc.pos.y + 1.2, z: npc.pos.z };
 
-              if (other.health <= 0) {
-                other.health = 0;
-                other.isKnockedOut = true;
-                this.dropPlayerInventory(other);
+                if (npc.health <= 0) {
+                  npc.health = 0;
+                  this.applyWrongfulKill(player, npc.faction);
+                }
+                break;
               }
-              break;
             }
           }
         }
-      }
 
-      this.recentBulletTraces.push({
-        id: `bullet_${Date.now()}_${Math.random()}`,
-        origin,
-        target: hitTargetPos,
-        hit: hitSomething
-      });
+        if (!hitSomething) {
+          for (const other of this.players.values()) {
+            if (other.id === player.id || other.isKnockedOut) continue;
+            const dx = other.pos.x - origin.x;
+            const dz = other.pos.z - origin.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+
+            if (dist > 0.1 && dist <= stats.range) {
+              const dot = (dx * ndx + dz * ndz) / dist;
+              if (dot > (weaponType === 'rifle' ? 0.94 : (weaponType === 'shotgun' ? 0.82 : 0.88))) {
+                other.health -= damagePerPellet;
+                hitSomething = true;
+                hitTargetPos = { x: other.pos.x, y: other.pos.y + 1.2, z: other.pos.z };
+
+                if (other.health <= 0) {
+                  other.health = 0;
+                  other.isKnockedOut = true;
+                  this.dropPlayerInventory(other);
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        this.recentBulletTraces.push({
+          id: `bullet_${Date.now()}_${Math.random()}`,
+          origin,
+          target: hitTargetPos,
+          hit: hitSomething
+        });
+      }
       return;
     }
 
@@ -842,8 +863,10 @@ export class GameRoom {
     if (!player || player.isKnockedOut || this.status !== 'playing') return;
 
     const currentItem = player.inventory[player.activeSlot];
-    if (currentItem && currentItem.type === 'pistol') {
-      currentItem.ammo = WEAPON_STATS.pistol.magSize;
+    if (currentItem) {
+      if (currentItem.type === 'pistol') currentItem.ammo = WEAPON_STATS.pistol.magSize;
+      else if (currentItem.type === 'rifle') currentItem.ammo = WEAPON_STATS.rifle.magSize;
+      else if (currentItem.type === 'shotgun') currentItem.ammo = WEAPON_STATS.shotgun.magSize;
     }
   }
 

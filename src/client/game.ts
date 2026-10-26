@@ -100,6 +100,7 @@ export class CockAndKeysGame {
   }
 
   private updateLocalEquippedWeapon(type: ItemType) {
+    this.controls.currentWeapon = type;
     if (this.viewmodel) {
       this.viewmodel.setWeapon(type);
     }
@@ -117,6 +118,12 @@ export class CockAndKeysGame {
     } else if (type === 'pistol') {
       const pistol = EntityMeshFactory.createWeaponMesh('pistol');
       socket.add(pistol);
+    } else if (type === 'rifle') {
+      const rifle = EntityMeshFactory.createWeaponMesh('rifle');
+      socket.add(rifle);
+    } else if (type === 'shotgun') {
+      const shotgun = EntityMeshFactory.createWeaponMesh('shotgun');
+      socket.add(shotgun);
     }
   }
 
@@ -191,8 +198,10 @@ export class CockAndKeysGame {
         this.network.sendReload();
       } else {
         const item = this.offlineInventory[this.activeSlotIndex];
-        if (item && item.type === 'pistol') {
-          item.ammo = 12;
+        if (item) {
+          if (item.type === 'pistol') item.ammo = 12;
+          else if (item.type === 'rifle') item.ammo = 5;
+          else if (item.type === 'shotgun') item.ammo = 6;
           this.ui.updateInventory(this.offlineInventory, this.activeSlotIndex);
         }
       }
@@ -233,25 +242,45 @@ export class CockAndKeysGame {
     const weaponType = activeItem ? activeItem.type : 'fists';
     this.viewmodel.triggerAttack(weaponType);
 
-    if (weaponType === 'pistol') {
-      if (activeItem && activeItem.ammo && activeItem.ammo <= 0) {
+    if (weaponType === 'pistol' || weaponType === 'rifle' || weaponType === 'shotgun') {
+      if (activeItem && activeItem.ammo !== undefined && activeItem.ammo <= 0) {
         this.audio.playFootstep();
         return;
       }
-      this.audio.playGunshot();
+
+      if (weaponType === 'rifle') {
+        this.audio.playSniperShot();
+      } else if (weaponType === 'shotgun') {
+        this.audio.playShotgunBlast();
+      } else {
+        this.audio.playGunshot();
+      }
 
       const camDir = new THREE.Vector3();
       this.renderer.camera.getWorldDirection(camDir);
       const origin = this.controls.pos.clone().add(new THREE.Vector3(0, 1.4, 0));
-      const target = origin.clone().add(camDir.clone().multiplyScalar(50));
-      this.spawnBulletTracer(origin, target);
+
+      const pelletCount = weaponType === 'shotgun' ? 8 : 1;
+      const range = WEAPON_STATS[weaponType].range;
+
+      for (let p = 0; p < pelletCount; p++) {
+        const spread = weaponType === 'shotgun'
+          ? new THREE.Vector3((Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.12)
+          : new THREE.Vector3(0, 0, 0);
+        const finalDir = camDir.clone().add(spread).normalize();
+        const target = origin.clone().add(finalDir.multiplyScalar(range));
+        this.spawnBulletTracer(origin, target);
+
+        if (this.isOfflineMode) {
+          this.checkOfflineHit(target, true);
+        }
+      }
 
       if (!this.isOfflineMode) {
         this.network.sendAttack(origin, camDir);
       } else {
         if (activeItem && activeItem.ammo) activeItem.ammo--;
         this.ui.updateInventory(this.offlineInventory, this.activeSlotIndex);
-        this.checkOfflineHit(target, true);
       }
     } else if (weaponType === 'knife') {
       this.audio.playKnifeSlash();
@@ -476,21 +505,31 @@ export class CockAndKeysGame {
 
     // 3. Spawn Weapons Everywhere Across Town
     const offlineWeaponSpots: { type: ItemType; name: string; ammo?: number; pos: THREE.Vector3 }[] = [
-      // Restaurant (0, -75)
+      // 1. Restaurant (0, -75)
       { type: 'pistol', name: '9mm Semi-Auto Pistol', ammo: 12, pos: new THREE.Vector3(0, 0.8, -82) },
       { type: 'knife', name: 'Chef Combat Knife', pos: new THREE.Vector3(-6, 0.8, -82) },
-      // Hospital (-75, 0)
+      // 2. Hospital (-75, 0)
       { type: 'bandage', name: 'Military Medical Kit', pos: new THREE.Vector3(-80, 0.8, 6) },
       { type: 'knife', name: 'Scalpel Knife', pos: new THREE.Vector3(-85, 0.8, -6) },
-      // Police HQ (0, 75)
+      // 3. Police HQ (0, 75)
       { type: 'pistol', name: '9mm Tactical Police Pistol', ammo: 12, pos: new THREE.Vector3(0, 0.8, 83) },
+      { type: 'shotgun', name: 'Police 12-Gauge Riot Shotgun', ammo: 6, pos: new THREE.Vector3(-4, 0.8, 83) },
       { type: 'bandage', name: 'Police Medical Pack', pos: new THREE.Vector3(2, 0.8, 72) },
-      // City Hall & Bank (75, 0)
+      // 4. City Hall & Bank (75, 0)
       { type: 'pistol', name: '9mm Vault Pistol', ammo: 12, pos: new THREE.Vector3(78, 0.8, 0) },
-      // Estate Porches
+      // 5. Four Player Estate Rooftop Terraces & Balconies
+      { type: 'rifle', name: '7.62mm Scoped Sniper Rifle', ammo: 5, pos: new THREE.Vector3(-80, 5.0, -70) }, // Cobalt Balcony
+      { type: 'shotgun', name: '12-Gauge Home Defense Shotgun', ammo: 6, pos: new THREE.Vector3(-82, 0.6, -80) }, // Cobalt Living Room
+      { type: 'rifle', name: '7.62mm Marksman Sniper Rifle', ammo: 5, pos: new THREE.Vector3(80, 10.0, -80) }, // Crimson Terrace
+      { type: 'shotgun', name: '12-Gauge Tactical Shotgun', ammo: 6, pos: new THREE.Vector3(-80, 5.0, 90) }, // Emerald Balcony
+      { type: 'rifle', name: '7.62mm High-Optic Sniper', ammo: 5, pos: new THREE.Vector3(80, 10.0, 80) }, // Amber Terrace
       { type: 'pistol', name: 'Cobalt Estate Handgun', ammo: 12, pos: new THREE.Vector3(-80, 0.4, -73) },
       { type: 'knife', name: 'Crimson Manor Dirk', pos: new THREE.Vector3(80, 0.4, -73) },
-      // Central Plaza
+      // 6. Central Park Gazebo Pavilion & Gardens
+      { type: 'rifle', name: 'Gazebo 7.62mm Sniper Rifle', ammo: 5, pos: new THREE.Vector3(0, 1.4, 48) },
+      { type: 'shotgun', name: '12-Gauge Park Defense Shotgun', ammo: 6, pos: new THREE.Vector3(2.5, 0.6, 48) },
+      { type: 'rifle', name: 'River Bridge Sniper Stash', ammo: 5, pos: new THREE.Vector3(0, 2.2, -45) },
+      // 7. Central Plaza
       { type: 'pistol', name: 'Fountain Stash Pistol', ammo: 12, pos: new THREE.Vector3(0, 0.4, 18) },
       { type: 'knife', name: 'Bronze Monument Trench Knife', pos: new THREE.Vector3(50, 0.4, 46) }
     ];
@@ -536,15 +575,29 @@ export class CockAndKeysGame {
             const riddle = getAccurateHouseRiddle(houseId, variation);
             this.triggerCollapseSequence(riddle);
           } else {
+            let pickedType: ItemType = 'pistol';
+            let pickedName = '9mm Semi-Auto Pistol';
+            let pickedAmmo = 12;
+
+            if (id.includes('rifle') || id === 'offline_pickup_8' || id === 'offline_pickup_10' || id === 'offline_pickup_12' || id === 'offline_pickup_15' || id === 'offline_pickup_17') {
+              pickedType = 'rifle';
+              pickedName = '7.62mm Scoped Sniper Rifle';
+              pickedAmmo = 5;
+            } else if (id.includes('shotgun') || id === 'offline_pickup_5' || id === 'offline_pickup_9' || id === 'offline_pickup_11' || id === 'offline_pickup_16') {
+              pickedType = 'shotgun';
+              pickedName = '12-Gauge Tactical Shotgun';
+              pickedAmmo = 6;
+            }
+
             this.offlineInventory[2] = {
-              id: 'scavenged_pistol',
-              type: 'pistol',
-              name: '9mm Semi-Auto Pistol',
-              ammo: 12,
-              maxAmmo: 12
+              id: `scavenged_${pickedType}`,
+              type: pickedType,
+              name: pickedName,
+              ammo: pickedAmmo,
+              maxAmmo: pickedAmmo
             };
             this.activeSlotIndex = 2;
-            this.updateLocalEquippedWeapon('pistol');
+            this.updateLocalEquippedWeapon(pickedType);
             this.ui.updateInventory(this.offlineInventory, this.activeSlotIndex);
           }
           return;
@@ -664,6 +717,11 @@ export class CockAndKeysGame {
         mesh.rotation.z = Math.PI / 2;
       } else {
         mesh.rotation.z = 0;
+        if (p.isMoving) {
+          EntityMeshFactory.animateWalkingHuman(mesh, this.npcAnimTimer, p.isSprinting);
+        } else {
+          EntityMeshFactory.animateIdleHuman(mesh, this.npcAnimTimer);
+        }
       }
     }
 
@@ -786,6 +844,7 @@ export class CockAndKeysGame {
       if (entity.activity === 'chat') {
         entity.yaw += Math.sin(Date.now() * 0.002) * 0.015;
         mesh.rotation.y = entity.yaw;
+        EntityMeshFactory.animateIdleHuman(mesh, this.npcAnimTimer);
         const rArm = mesh.getObjectByName('rightArm');
         if (rArm) rArm.rotation.x = -0.5 + Math.sin(this.npcAnimTimer * 0.6) * 0.3;
         continue;
@@ -857,16 +916,22 @@ export class CockAndKeysGame {
         moveZ = -Math.cos(entity.yaw) * ROOSTER_WALK_SPEED * delta;
       }
 
-      const nextX = mesh.position.x + moveX;
-      const nextZ = mesh.position.z + moveZ;
+      // Impenetrable Wall & Obstacle Sliding for Roosters
+      const canMoveX = !checkObstacleCollision(mesh.position.x + moveX, mesh.position.z, 0.55);
+      const canMoveZ = !checkObstacleCollision(mesh.position.x, mesh.position.z + moveZ, 0.55);
 
-      if (!checkObstacleCollision(nextX, nextZ, 0.45)) {
-        mesh.position.x = nextX;
-        mesh.position.z = nextZ;
-        mesh.position.y = getTerrainHeight(mesh.position.x, mesh.position.z);
-      } else {
-        entity.yaw = Math.random() * Math.PI * 2;
+      if (canMoveX) {
+        mesh.position.x += moveX;
       }
+      if (canMoveZ) {
+        mesh.position.z += moveZ;
+      }
+
+      if (!canMoveX || !canMoveZ) {
+        entity.yaw += Math.PI * 0.65;
+      }
+
+      mesh.position.y = getTerrainHeight(mesh.position.x, mesh.position.z);
       mesh.rotation.y = entity.yaw;
     }
   }
@@ -950,6 +1015,10 @@ export class CockAndKeysGame {
       this.controls.pitch
     );
 
+    // Update High-Power Optic Sniper Scope Overlay
+    const isSniperScoped = !this.controls.isThirdPerson && this.controls.isAiming && this.controls.currentWeapon === 'rifle';
+    this.ui.setSniperScopeVisible(isSniperScoped);
+
     if (this.isOfflineMode) {
       this.updateOfflineAI(delta);
     }
@@ -978,18 +1047,11 @@ export class CockAndKeysGame {
         if (rightKnee) rightKnee.rotation.x = 0.65;
         if (rightArm) rightArm.rotation.x = this.controls.isAiming ? -Math.PI / 2 : 0;
       } else {
-        const leftLeg = this.localPlayerMesh.getObjectByName('leftLeg');
-        const rightLeg = this.localPlayerMesh.getObjectByName('rightLeg');
-        const leftKnee = this.localPlayerMesh.getObjectByName('leftKnee');
-        const rightKnee = this.localPlayerMesh.getObjectByName('rightKnee');
-        const leftArm = this.localPlayerMesh.getObjectByName('leftArm');
-        const rightArm = this.localPlayerMesh.getObjectByName('rightArm');
-        if (leftLeg) leftLeg.rotation.x = 0;
-        if (rightLeg) rightLeg.rotation.x = 0;
-        if (leftKnee) leftKnee.rotation.x = 0;
-        if (rightKnee) rightKnee.rotation.x = 0;
-        if (leftArm) leftArm.rotation.x = 0;
-        if (rightArm) rightArm.rotation.x = this.controls.isAiming ? -Math.PI / 2 : 0;
+        EntityMeshFactory.animateIdleHuman(this.localPlayerMesh, this.npcAnimTimer);
+        if (this.controls.isAiming) {
+          const rightArm = this.localPlayerMesh.getObjectByName('rightArm');
+          if (rightArm) rightArm.rotation.x = -Math.PI / 2;
+        }
       }
     }
 

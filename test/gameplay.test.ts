@@ -211,4 +211,40 @@ describe('Cock & Keys — Advanced Weapons, PvP & Game Rule Tests', () => {
     assert.equal(room.status, 'ended');
     room.stop();
   });
+
+  test('8. Scoped Sniper Rifle and Tactical Shotgun firing and ballistics', () => {
+    const room = new GameRoom('TEST');
+    room.addClient('p1', 'Player 1', createMockSocket());
+    room.startMatch('p1');
+
+    const player = room.players.get('p1')!;
+
+    // Equip Sniper Rifle
+    player.inventory[2] = { id: 'rifle_test', type: 'rifle', name: 'Scoped Sniper', ammo: 5, maxAmmo: 5 };
+    player.activeSlot = 2;
+
+    const rooster = Array.from(room.roosters.values())[0];
+    rooster.pos = { x: player.pos.x, y: player.pos.y, z: player.pos.z - 25 };
+    rooster.health = 200;
+    player.yaw = 0;
+    player.pitch = 0;
+
+    room.handlePlayerAttack('p1');
+    assert.equal(player.inventory[2]!.ammo, 4, 'Sniper should expend 1 round');
+    assert.equal(rooster.health, 200 - WEAPON_STATS.rifle.damage, 'Sniper deals massive 95 damage');
+
+    room.handlePlayerReload('p1');
+    assert.equal(player.inventory[2]!.ammo, 5, 'Sniper should reload to 5 rounds');
+
+    // Equip Shotgun
+    player.inventory[3] = { id: 'shotgun_test', type: 'shotgun', name: '12-Gauge Shotgun', ammo: 6, maxAmmo: 6 };
+    player.activeSlot = 3;
+
+    room.handlePlayerAttack('p1');
+    assert.equal(player.inventory[3]!.ammo, 5, 'Shotgun should expend 1 shell');
+
+    room.handlePlayerReload('p1');
+    assert.equal(player.inventory[3]!.ammo, 6, 'Shotgun should reload to 6 shells');
+    room.stop();
+  });
 });
