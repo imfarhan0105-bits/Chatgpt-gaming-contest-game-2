@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLAYER_CROUCH_SPEED, PLAYER_SPRINT_SPEED, PLAYER_WALK_SPEED } from '../shared/constants.ts';
+import { checkObstacleCollision, PLAYER_CROUCH_SPEED, PLAYER_SPRINT_SPEED, PLAYER_WALK_SPEED } from '../shared/constants.ts';
 import { TownWorld } from './town.ts';
 
 export class PlayerControls {
@@ -9,24 +9,29 @@ export class PlayerControls {
 
   public isLocked: boolean = false;
   public pos: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
+
+  // Mouse Look with Exponential Damping for Butter-Smooth Aiming
   public yaw: number = 0;
   public pitch: number = 0;
+  private targetYaw: number = 0;
+  private targetPitch: number = 0;
 
-  // Perspective settings (Default: Third-Person PvP)
+  // Perspective settings (Default: Close, High-Control Third-Person PvP)
   public isThirdPerson: boolean = true;
   public isAiming: boolean = false;
   public isCrouching: boolean = false;
 
-  private targetCamDistance: number = 2.8;
-  private currentCamDistance: number = 2.8;
-  private shoulderOffset: number = 0.55; // Over-the-right-shoulder PvP camera
+  // Tight, controllable camera settings
+  private targetCamDistance: number = 1.75; // Close over-the-shoulder view
+  private currentCamDistance: number = 1.75;
+  private shoulderOffset: number = 0.32; // Tight right shoulder offset
 
   private keys: Record<string, boolean> = {};
   private isGrounded: boolean = true;
   private jumpVelocity: number = 0;
   private gravity: number = 24.0;
 
-  // Animation timers
+  // Animation timer
   public walkCycleTimer: number = 0;
 
   // Callbacks
@@ -61,13 +66,14 @@ export class PlayerControls {
       const movementX = event.movementX || 0;
       const movementY = event.movementY || 0;
 
-      const sensitivity = this.isAiming ? 0.0012 : 0.0022;
-      this.yaw -= movementX * sensitivity;
-      this.pitch -= movementY * sensitivity;
+      // Smooth controllable sensitivity
+      const sensitivity = this.isAiming ? 0.0014 : 0.0020;
+      this.targetYaw -= movementX * sensitivity;
+      this.targetPitch -= movementY * sensitivity;
 
-      // Pitch clamping (-85 to +85 degrees)
-      const maxPitch = Math.PI / 2 - 0.08;
-      this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
+      // Pitch clamping (-80 to +80 degrees)
+      const maxPitch = 1.4;
+      this.targetPitch = Math.max(-maxPitch, Math.min(maxPitch, this.targetPitch));
     });
   }
 
@@ -85,38 +91,31 @@ export class PlayerControls {
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
 
-      // E key: Interact / Pick Up / Unlock
-      if (this.isLocked && (e.code === 'KeyE')) {
+      if (this.isLocked && e.code === 'KeyE') {
         if (this.onInteract) this.onInteract();
       }
 
-      // R key: Reload
       if (this.isLocked && e.code === 'KeyR') {
         if (this.onReload) this.onReload();
       }
 
-      // G key: Drop weapon
       if (this.isLocked && e.code === 'KeyG') {
         if (this.onDropItem) this.onDropItem();
       }
 
-      // V key: Toggle 3rd-person PvP / 1st-person
       if (this.isLocked && e.code === 'KeyV') {
         this.isThirdPerson = !this.isThirdPerson;
       }
 
-      // C key: Toggle Crouch (Ambush / Stealth)
       if (this.isLocked && (e.code === 'KeyC' || e.code === 'ControlLeft')) {
         this.isCrouching = !this.isCrouching;
       }
 
-      // Number keys 1-4: Weapon select
       if (this.isLocked && ['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) {
         const slot = parseInt(e.code.replace('Digit', ''), 10) - 1;
         if (this.onSelectSlot) this.onSelectSlot(slot);
       }
 
-      // Space: Jump
       if (this.isLocked && e.code === 'Space' && this.isGrounded) {
         this.jumpVelocity = 7.5;
         this.isGrounded = false;
@@ -134,10 +133,8 @@ export class PlayerControls {
       if (!this.isLocked) return;
 
       if (e.button === 0) {
-        // Left Click: Attack / Shoot
         if (this.onAttack) this.onAttack();
       } else if (e.button === 2) {
-        // Right Click: Aim Down Sights (ADS)
         this.isAiming = true;
       }
     });
@@ -162,6 +159,11 @@ export class PlayerControls {
   }
 
   public update(delta: number, canMove: boolean = true) {
+    // Smooth exponential damping on mouse rotation for butter-smooth camera control
+    const dampFactor = Math.min(1.0, delta * 28.0);
+    this.yaw += (this.targetYaw - this.yaw) * dampFactor;
+    this.pitch += (this.targetPitch - this.pitch) * dampFactor;
+
     if (!this.isLocked || !canMove) {
       this.updateCameraPosition();
       return;
@@ -185,12 +187,10 @@ export class PlayerControls {
       else if (this.isCrouching) speed = PLAYER_CROUCH_SPEED;
 
       // In Three.js, horizontal forward direction for given yaw:
-      // forward = (-sin(yaw), 0, -cos(yaw))
       const fX = -Math.sin(this.yaw);
       const fZ = -Math.cos(this.yaw);
 
       // right vector (perpendicular to forward):
-      // right = (cos(yaw), 0, -sin(yaw))
       const rX = Math.cos(this.yaw);
       const rZ = -Math.sin(this.yaw);
 
@@ -198,7 +198,7 @@ export class PlayerControls {
       let dirX = fX * forwardInput + rX * strafeInput;
       let dirZ = fZ * forwardInput + rZ * strafeInput;
 
-      // Normalize diagonal movement so diagonal isn't faster
+      // Normalize diagonal movement
       const len = Math.sqrt(dirX * dirX + dirZ * dirZ);
       if (len > 0.001) {
         dirX /= len;
@@ -228,14 +228,14 @@ export class PlayerControls {
     // Collision check X
     const testPosX = this.pos.clone();
     testPosX.x += moveVector.x * delta;
-    if (!this.town.checkCollision(new THREE.Vector3(testPosX.x, testPosX.y + 1, testPosX.z), 0.45)) {
+    if (!checkObstacleCollision(testPosX.x, testPosX.z, 0.45) && !this.town.checkCollision(new THREE.Vector3(testPosX.x, testPosX.y + 1, testPosX.z), 0.45)) {
       this.pos.x = testPosX.x;
     }
 
     // Collision check Z
     const testPosZ = this.pos.clone();
     testPosZ.z += moveVector.z * delta;
-    if (!this.town.checkCollision(new THREE.Vector3(testPosZ.x, testPosZ.y + 1, testPosZ.z), 0.45)) {
+    if (!checkObstacleCollision(testPosZ.x, testPosZ.z, 0.45) && !this.town.checkCollision(new THREE.Vector3(testPosZ.x, testPosZ.y + 1, testPosZ.z), 0.45)) {
       this.pos.z = testPosZ.z;
     }
 
@@ -243,26 +243,23 @@ export class PlayerControls {
   }
 
   private updateCameraPosition() {
-    this.targetCamDistance = this.isAiming ? 1.6 : (this.isThirdPerson ? 2.8 : 0);
-    this.currentCamDistance += (this.targetCamDistance - this.currentCamDistance) * 0.18;
+    this.targetCamDistance = this.isAiming ? 1.15 : (this.isThirdPerson ? 1.75 : 0);
+    this.currentCamDistance += (this.targetCamDistance - this.currentCamDistance) * 0.22;
 
-    const eyeHeight = this.isCrouching ? 1.1 : 1.7;
+    const eyeHeight = this.isCrouching ? 1.05 : 1.65;
     const playerCenter = new THREE.Vector3(this.pos.x, this.pos.y + eyeHeight, this.pos.z);
 
-    // Camera rotation matches player aim
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.yaw;
     this.camera.rotation.x = this.pitch;
-    this.camera.fov = this.isAiming ? 50 : 75;
+    this.camera.fov = this.isAiming ? 52 : 72;
     this.camera.updateProjectionMatrix();
 
     if (this.currentCamDistance < 0.1) {
-      // First Person: Camera placed at player's eyes
+      // First Person
       this.camera.position.copy(playerCenter);
     } else {
-      // Third-Person PvP Over-the-Shoulder Camera:
-      // Forward direction: f = (-sin(yaw)*cos(pitch), -sin(pitch), -cos(yaw)*cos(pitch))
-      // Right direction: r = (cos(yaw), 0, -sin(yaw))
+      // Third-Person PvP: Tightly framed right shoulder camera
       const fX = -Math.sin(this.yaw) * Math.cos(this.pitch);
       const fY = -Math.sin(this.pitch);
       const fZ = -Math.cos(this.yaw) * Math.cos(this.pitch);
@@ -270,18 +267,17 @@ export class PlayerControls {
       const rX = Math.cos(this.yaw);
       const rZ = -Math.sin(this.yaw);
 
-      const offsetShoulder = this.isAiming ? 0.35 : this.shoulderOffset;
+      const offsetShoulder = this.isAiming ? 0.22 : this.shoulderOffset;
 
-      // Position camera behind player (opposite of forward) and slightly to the right shoulder
       let camX = playerCenter.x - fX * this.currentCamDistance + rX * offsetShoulder;
-      let camY = playerCenter.y - fY * this.currentCamDistance + 0.25;
+      let camY = playerCenter.y - fY * this.currentCamDistance + 0.18;
       let camZ = playerCenter.z - fZ * this.currentCamDistance + rZ * offsetShoulder;
 
-      // Camera collision prevention against buildings
-      if (this.town.checkCollision(new THREE.Vector3(camX, camY, camZ), 0.3)) {
-        camX = playerCenter.x - fX * 1.0 + rX * (offsetShoulder * 0.5);
-        camY = playerCenter.y - fY * 1.0 + 0.2;
-        camZ = playerCenter.z - fZ * 1.0 + rZ * (offsetShoulder * 0.5);
+      // Obstacle collision detection for camera
+      if (checkObstacleCollision(camX, camZ, 0.25) || this.town.checkCollision(new THREE.Vector3(camX, camY, camZ), 0.25)) {
+        camX = playerCenter.x - fX * 0.8 + rX * (offsetShoulder * 0.4);
+        camY = playerCenter.y - fY * 0.8 + 0.15;
+        camZ = playerCenter.z - fZ * 0.8 + rZ * (offsetShoulder * 0.4);
       }
 
       this.camera.position.set(camX, camY, camZ);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HOUSES, INTERACTION_DISTANCE, WEAPON_STATS } from '../shared/constants.ts';
+import { checkObstacleCollision, HOUSES, INTERACTION_DISTANCE, NPC_WALK_SPEED, ROOSTER_WALK_SPEED, WEAPON_STATS } from '../shared/constants.ts';
 import type { GameSnapshot, ItemType, PlayerRole } from '../shared/types.ts';
 import { SoundEffects } from './audio.ts';
 import { PlayerControls } from './controls.ts';
@@ -8,6 +8,12 @@ import { NetworkClient } from './network.ts';
 import { GameRenderer } from './renderer.ts';
 import { TownWorld } from './town.ts';
 import { UIManager } from './ui.ts';
+
+interface OfflineEntity {
+  mesh: THREE.Group;
+  yaw: number;
+  twitchTimer: number;
+}
 
 export class CockAndKeysGame {
   private renderer: GameRenderer;
@@ -25,7 +31,6 @@ export class CockAndKeysGame {
   private myRole: PlayerRole = 'pedestrian';
   private myAssignedHouse: number = 0;
   private localPlayerMesh: THREE.Group | null = null;
-  private localWeaponMesh: THREE.Group | null = null;
   private activeSlotIndex: number = 1;
 
   private hasKey: boolean = false;
@@ -39,6 +44,10 @@ export class CockAndKeysGame {
   private npcMeshes: Map<string, THREE.Group> = new Map();
   private pickupMeshes: Map<string, THREE.Group> = new Map();
 
+  // Offline AI Entities
+  private offlineNpcEntities: Map<string, OfflineEntity> = new Map();
+  private offlineRoosterEntities: Map<string, OfflineEntity> = new Map();
+
   // Bullet tracers pool
   private activeBulletLines: { line: THREE.Line; expireTime: number }[] = [];
 
@@ -46,15 +55,14 @@ export class CockAndKeysGame {
   private offlineInventory = [
     { id: 'fists_local', type: 'fists' as ItemType, name: 'Fists' },
     { id: 'knife_local', type: 'knife' as ItemType, name: 'Tactical Knife' },
-    { id: 'pistol_local', type: 'pistol' as ItemType, name: '9mm Pistol', ammo: 12, maxAmmo: 12 },
+    null,
     null
   ];
-  private offlineHealth: number = 100;
-  private offlineRedMeter: number = 0;
 
   // Network sync throttling
   private lastInputSendTime: number = 0;
   private footstepTimer: number = 0;
+  private npcAnimTimer: number = 0;
 
   constructor() {
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -87,7 +95,6 @@ export class CockAndKeysGame {
     const socket = this.localPlayerMesh.getObjectByName('weaponSocket') as THREE.Group;
     if (!socket) return;
 
-    // Clear existing equipped weapon
     while (socket.children.length > 0) {
       socket.remove(socket.children[0]);
     }
@@ -190,7 +197,6 @@ export class CockAndKeysGame {
         if (slot >= 0 && slot < 4) {
           this.activeSlotIndex = slot;
         } else {
-          // Scroll wrap
           this.activeSlotIndex = (this.activeSlotIndex + (slot > 0 ? 1 : 3)) % 4;
         }
 
@@ -206,7 +212,7 @@ export class CockAndKeysGame {
   }
 
   private handleAttackAction() {
-    if (this.hasGenuineKey) return; // Unarmed escape rule
+    if (this.hasGenuineKey) return;
 
     const activeItem = this.isOfflineMode
       ? this.offlineInventory[this.activeSlotIndex]
@@ -216,12 +222,11 @@ export class CockAndKeysGame {
 
     if (weaponType === 'pistol') {
       if (activeItem && activeItem.ammo && activeItem.ammo <= 0) {
-        this.audio.playFootstep(); // Dry click
+        this.audio.playFootstep();
         return;
       }
       this.audio.playGunshot();
 
-      // Spawn bullet tracer from gun muzzle
       const camDir = new THREE.Vector3();
       this.renderer.camera.getWorldDirection(camDir);
       const origin = this.controls.pos.clone().add(new THREE.Vector3(0, 1.4, 0));
@@ -257,7 +262,6 @@ export class CockAndKeysGame {
       if (mesh.position.distanceTo(this.controls.pos) < 3.2) {
         this.audio.playRoosterCall();
         mesh.rotation.z = Math.PI / 2;
-        // Drop key
         const keyPickup = EntityMeshFactory.createPickupMesh('key', true);
         keyPickup.position.copy(mesh.position);
         keyPickup.position.y = 0.5;
@@ -270,7 +274,7 @@ export class CockAndKeysGame {
 
   private checkOfflineHit(targetPos: THREE.Vector3, isGun: boolean) {
     for (const [id, mesh] of this.roosterMeshes.entries()) {
-      if (mesh.position.distanceTo(targetPos) < 4.0 || mesh.position.distanceTo(this.controls.pos) < 15.0) {
+      if (mesh.position.distanceTo(targetPos) < 4.5 || mesh.position.distanceTo(this.controls.pos) < 16.0) {
         this.audio.playRoosterCall();
         mesh.rotation.z = Math.PI / 2;
         const keyPickup = EntityMeshFactory.createPickupMesh('key', true);
@@ -309,7 +313,6 @@ export class CockAndKeysGame {
       this.myRole = role;
       this.myAssignedHouse = assignedHouse;
 
-      // Update local player model wardrobe
       if (this.localPlayerMesh) {
         this.renderer.scene.remove(this.localPlayerMesh);
       }
@@ -358,41 +361,97 @@ export class CockAndKeysGame {
     this.controls.pos.set(0, 0, 15);
     this.controls.requestLock();
 
-    // Spawn 8 Roosters across the city
+    // Spawn 8 Roosters with unpredictable pathing
     for (let i = 0; i < 8; i++) {
       const rooster = EntityMeshFactory.createRoosterMesh();
       const angle = (i / 8) * Math.PI * 2;
-      const dist = 30 + (i % 3) * 18;
-      rooster.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+      const dist = 32 + (i % 3) * 16;
+      let rx = Math.cos(angle) * dist;
+      let rz = Math.sin(angle) * dist;
+      if (checkObstacleCollision(rx, rz, 0.6)) {
+        rx += 3;
+        rz += 3;
+      }
+      rooster.position.set(rx, 0, rz);
       this.renderer.scene.add(rooster);
       this.roosterMeshes.set(`offline_rooster_${i}`, rooster);
+      this.offlineRoosterEntities.set(`offline_rooster_${i}`, {
+        mesh: rooster,
+        yaw: Math.random() * Math.PI * 2,
+        twitchTimer: Math.random() * 1.5
+      });
     }
 
-    // Spawn 30 Crowds with city activities
+    // Spawn 35 Active Moving NPCs
     const factions: ('pedestrian' | 'waiter' | 'doctor' | 'lawyer' | 'guard' | 'merchant')[] = [
       'pedestrian', 'waiter', 'doctor', 'lawyer', 'guard', 'merchant'
     ];
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 35; i++) {
       const faction = factions[i % factions.length];
       const npc = EntityMeshFactory.createCharacterMesh(faction);
-      const angle = (i / 30) * Math.PI * 2 + 0.2;
-      const dist = 20 + (i % 5) * 15;
-      npc.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+      const angle = (i / 35) * Math.PI * 2 + 0.2;
+      const dist = 18 + (i % 5) * 16;
+      let nx = Math.cos(angle) * dist;
+      let nz = Math.sin(angle) * dist;
+      if (checkObstacleCollision(nx, nz, 0.6)) {
+        nx += 3;
+        nz += 3;
+      }
+      npc.position.set(nx, 0, nz);
       this.renderer.scene.add(npc);
       this.npcMeshes.set(`offline_npc_${i}`, npc);
+      this.offlineNpcEntities.set(`offline_npc_${i}`, {
+        mesh: npc,
+        yaw: Math.random() * Math.PI * 2,
+        twitchTimer: Math.random() * 2.0
+      });
     }
+
+    // Spawn Weapons INSIDE Different Buildings
+    const offlineWeaponSpots: { type: ItemType; name: string; ammo?: number; pos: THREE.Vector3 }[] = [
+      // Inside Restaurant (0, -75) on bar counter
+      { type: 'pistol', name: '9mm Semi-Auto Pistol', ammo: 12, pos: new THREE.Vector3(0, 0.8, -82) },
+      // Inside Central Hospital (-75, 0) on bed
+      { type: 'bandage', name: 'Military Medical Kit', pos: new THREE.Vector3(-80, 0.8, 6) },
+      // Inside Police HQ (0, 75) in evidence locker
+      { type: 'pistol', name: '9mm Tactical Police Pistol', ammo: 12, pos: new THREE.Vector3(0, 0.8, 83) },
+      // Inside City Hall & Bank (75, 0) behind teller counter
+      { type: 'pistol', name: '9mm Vault Pistol', ammo: 12, pos: new THREE.Vector3(78, 0.8, 0) }
+    ];
+
+    offlineWeaponSpots.forEach((spot, idx) => {
+      const mesh = EntityMeshFactory.createPickupMesh(spot.type, false);
+      mesh.position.copy(spot.pos);
+      this.renderer.scene.add(mesh);
+      this.pickupMeshes.set(`offline_pickup_${idx}`, mesh);
+    });
   }
 
   private handleInteractAction() {
     if (this.isOfflineMode) {
-      // Offline key pickup
+      // Offline pickup collection
       for (const [id, mesh] of this.pickupMeshes.entries()) {
-        if (mesh.position.distanceTo(this.controls.pos) < INTERACTION_DISTANCE + 1.0) {
+        if (mesh.position.distanceTo(this.controls.pos) < INTERACTION_DISTANCE + 1.2) {
           this.audio.playPickup();
           this.renderer.scene.remove(mesh);
           this.pickupMeshes.delete(id);
-          this.hasKey = true;
-          this.triggerCollapseSequence(HOUSES[0].riddleClue);
+
+          if (id.includes('key')) {
+            this.hasKey = true;
+            this.triggerCollapseSequence(HOUSES[0].riddleClue);
+          } else {
+            // Weapon pickup
+            this.offlineInventory[2] = {
+              id: 'scavenged_pistol',
+              type: 'pistol',
+              name: '9mm Semi-Auto Pistol',
+              ammo: 12,
+              maxAmmo: 12
+            };
+            this.activeSlotIndex = 2;
+            this.updateLocalEquippedWeapon('pistol');
+            this.ui.updateInventory(this.offlineInventory, this.activeSlotIndex);
+          }
           return;
         }
       }
@@ -400,10 +459,10 @@ export class CockAndKeysGame {
       // Offline estate door unlock
       HOUSES.forEach((h) => {
         const doorPos = new THREE.Vector3(h.doorPos.x, 1.5, h.doorPos.z + 10);
-        if (this.controls.pos.distanceTo(doorPos) < INTERACTION_DISTANCE + 1.5) {
+        if (this.controls.pos.distanceTo(doorPos) < INTERACTION_DISTANCE + 1.8) {
           if (this.hasKey && h.id === this.myAssignedHouse) {
             this.audio.playWin();
-            this.ui.showGameOver('You (Solo)', 'You solved the riddle and reached home!', true);
+            this.ui.showGameOver('You (Solo)', 'You cracked the riddle and unlocked your estate!', true);
             this.controls.unlock();
           }
         }
@@ -446,7 +505,6 @@ export class CockAndKeysGame {
     this.audio.playCollapse();
     this.ui.showCollapseScreen();
 
-    // Drop weapons visually
     if (this.localPlayerMesh) {
       const smile = this.localPlayerMesh.getObjectByName('smileMesh');
       if (smile) smile.visible = true;
@@ -555,7 +613,7 @@ export class CockAndKeysGame {
       }
     }
 
-    // 3. Sync NPCs
+    // 3. Sync NPCs & Animate Walking Limbs
     const activeNpcIds = new Set<string>();
     for (const [id, npc] of Object.entries(snapshot.npcs)) {
       activeNpcIds.add(id);
@@ -567,7 +625,19 @@ export class CockAndKeysGame {
       }
 
       mesh.position.lerp(new THREE.Vector3(npc.pos.x, npc.pos.y, npc.pos.z), 0.25);
-      mesh.rotation.y = npc.yaw;
+      mesh.rotation.y = npc.yaw + Math.PI;
+
+      // Animate NPC walking limbs
+      const leftLeg = mesh.getObjectByName('leftLeg');
+      const rightLeg = mesh.getObjectByName('rightLeg');
+      const leftArm = mesh.getObjectByName('leftArm');
+      const rightArm = mesh.getObjectByName('rightArm');
+
+      const swing = Math.sin(this.npcAnimTimer + parseInt(id.replace(/\D/g, '') || '0', 10)) * 0.5;
+      if (leftLeg) leftLeg.rotation.x = swing;
+      if (rightLeg) rightLeg.rotation.x = -swing;
+      if (leftArm) leftArm.rotation.x = -swing * 0.7;
+      if (rightArm) rightArm.rotation.x = swing * 0.7;
     }
 
     for (const [id, mesh] of this.npcMeshes.entries()) {
@@ -600,20 +670,93 @@ export class CockAndKeysGame {
     }
   }
 
+  private updateOfflineAI(delta: number) {
+    // 1. Move all Offline NPCs actively along streets with obstacle avoidance
+    for (const [_, entity] of this.offlineNpcEntities.entries()) {
+      const mesh = entity.mesh;
+      entity.yaw += (Math.random() - 0.5) * 1.2 * delta;
+
+      const moveX = -Math.sin(entity.yaw) * NPC_WALK_SPEED * delta;
+      const moveZ = -Math.cos(entity.yaw) * NPC_WALK_SPEED * delta;
+
+      const nextX = mesh.position.x + moveX;
+      const nextZ = mesh.position.z + moveZ;
+
+      if (!checkObstacleCollision(nextX, nextZ, 0.45)) {
+        mesh.position.x = nextX;
+        mesh.position.z = nextZ;
+      } else {
+        entity.yaw += Math.PI * 0.75;
+      }
+      mesh.rotation.y = entity.yaw + Math.PI;
+
+      // Animate limbs
+      const leftLeg = mesh.getObjectByName('leftLeg');
+      const rightLeg = mesh.getObjectByName('rightLeg');
+      const leftArm = mesh.getObjectByName('leftArm');
+      const rightArm = mesh.getObjectByName('rightArm');
+      const swing = Math.sin(this.npcAnimTimer) * 0.5;
+      if (leftLeg) leftLeg.rotation.x = swing;
+      if (rightLeg) rightLeg.rotation.x = -swing;
+      if (leftArm) leftArm.rotation.x = -swing * 0.7;
+      if (rightArm) rightArm.rotation.x = swing * 0.7;
+    }
+
+    // 2. Move all Offline Roosters with erratic unpredictable pathing and obstacle avoidance
+    for (const [_, entity] of this.offlineRoosterEntities.entries()) {
+      const mesh = entity.mesh;
+      entity.twitchTimer -= delta;
+      if (entity.twitchTimer <= 0) {
+        entity.twitchTimer = 0.5 + Math.random() * 1.5;
+        entity.yaw += (Math.random() - 0.5) * 3.0; // Random twitch
+      }
+
+      // Check player proximity
+      const distToPlayer = mesh.position.distanceTo(this.controls.pos);
+      let moveX = 0;
+      let moveZ = 0;
+
+      if (distToPlayer < 8.0) {
+        // Fleeing frantically with zig-zag
+        const dx = mesh.position.x - this.controls.pos.x;
+        const dz = mesh.position.z - this.controls.pos.z;
+        const fleeAngle = Math.atan2(dx, dz) + Math.sin(Date.now() * 0.008) * 0.6;
+        moveX = Math.sin(fleeAngle) * 9.0 * delta;
+        moveZ = Math.cos(fleeAngle) * 9.0 * delta;
+        entity.yaw = fleeAngle;
+      } else {
+        moveX = -Math.sin(entity.yaw) * ROOSTER_WALK_SPEED * delta;
+        moveZ = -Math.cos(entity.yaw) * ROOSTER_WALK_SPEED * delta;
+      }
+
+      const nextX = mesh.position.x + moveX;
+      const nextZ = mesh.position.z + moveZ;
+
+      // Obstacle collision check: Roosters NEVER enter obstacles!
+      if (!checkObstacleCollision(nextX, nextZ, 0.45)) {
+        mesh.position.x = nextX;
+        mesh.position.z = nextZ;
+      } else {
+        entity.yaw = Math.random() * Math.PI * 2;
+      }
+      mesh.rotation.y = entity.yaw;
+    }
+  }
+
   private updateInteractionPrompts() {
     let prompt: string | null = null;
 
     if (this.isOfflineMode) {
-      for (const [_, mesh] of this.pickupMeshes.entries()) {
-        if (mesh.position.distanceTo(this.controls.pos) < INTERACTION_DISTANCE + 1.0) {
-          prompt = 'Press [E] to Pick Up Key';
+      for (const [id, mesh] of this.pickupMeshes.entries()) {
+        if (mesh.position.distanceTo(this.controls.pos) < INTERACTION_DISTANCE + 1.2) {
+          prompt = id.includes('key') ? 'Press [E] to Pick Up Key' : 'Press [E] to Pick Up Weapon';
           break;
         }
       }
       if (!prompt) {
         HOUSES.forEach((h) => {
           const doorPos = new THREE.Vector3(h.doorPos.x, 1.5, h.doorPos.z + 10);
-          if (this.controls.pos.distanceTo(doorPos) < INTERACTION_DISTANCE + 1.5) {
+          if (this.controls.pos.distanceTo(doorPos) < INTERACTION_DISTANCE + 1.8) {
             prompt = `Press [E] to Unlock ${h.name}`;
           }
         });
@@ -622,7 +765,6 @@ export class CockAndKeysGame {
       return;
     }
 
-    // Multiplayer prompts
     if (this.network.latestSnapshot) {
       for (const [_, item] of Object.entries(this.network.latestSnapshot.pickups)) {
         const itemPos = new THREE.Vector3(item.pos.x, item.pos.y, item.pos.z);
@@ -650,17 +792,20 @@ export class CockAndKeysGame {
     requestAnimationFrame(this.gameLoop.bind(this));
 
     const delta = Math.min(this.clock.getDelta(), 0.1);
+    this.npcAnimTimer += delta * 6.5;
 
     this.controls.update(delta, !this.isCollapsing);
 
-    // Update local player mesh in Third-Person PvP mode
+    if (this.isOfflineMode) {
+      this.updateOfflineAI(delta);
+    }
+
+    // Local player mesh in Third-Person PvP mode
     if (this.localPlayerMesh) {
-      // In 3rd person mode, player mesh is visible
       this.localPlayerMesh.visible = this.controls.isThirdPerson;
       this.localPlayerMesh.position.set(this.controls.pos.x, this.controls.pos.y, this.controls.pos.z);
       this.localPlayerMesh.rotation.y = this.controls.yaw + Math.PI;
 
-      // Animate walking limbs
       const leftLeg = this.localPlayerMesh.getObjectByName('leftLeg');
       const rightLeg = this.localPlayerMesh.getObjectByName('rightLeg');
       const leftArm = this.localPlayerMesh.getObjectByName('leftArm');
@@ -680,7 +825,7 @@ export class CockAndKeysGame {
       }
     }
 
-    // Update bullet line decays
+    // Bullet line decay
     const nowMs = performance.now();
     for (let i = this.activeBulletLines.length - 1; i >= 0; i--) {
       const bl = this.activeBulletLines[i];
@@ -702,7 +847,7 @@ export class CockAndKeysGame {
 
     this.updateInteractionPrompts();
 
-    // Sync input to server at 20Hz
+    // 20Hz Network Sync
     const now = performance.now();
     if (!this.isOfflineMode && this.network.playerId && now - this.lastInputSendTime > 45) {
       this.lastInputSendTime = now;

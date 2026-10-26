@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HOUSES, LANDMARKS, TOWN_SIZE, TOWN_WALL_HEIGHT } from '../shared/constants.ts';
+import { checkObstacleCollision, HOUSES, LANDMARKS, TOWN_SIZE, TOWN_WALL_HEIGHT } from '../shared/constants.ts';
 import { ProceduralTextures } from './textures.ts';
 
 export interface BoxCollider {
@@ -17,14 +17,13 @@ export class TownWorld {
     this.buildGroundAndRoads();
     this.buildPerimeterWalls();
     this.buildPlayerEstates();
-    this.buildCivicDistricts();
+    this.buildEnterableCivicBuildings();
     this.buildAmbushAlleysAndSlums();
     this.buildCentralParkAndPromenade();
-    this.buildParkedVehicles();
     this.buildCityStreetlightsAndProps();
   }
 
-  private addCollider(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number) {
+  public addCollider(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number) {
     this.colliders.push({
       min: new THREE.Vector3(minX, minY, minZ),
       max: new THREE.Vector3(maxX, maxY, maxZ)
@@ -32,7 +31,7 @@ export class TownWorld {
   }
 
   private buildGroundAndRoads() {
-    // 1. Base grass / pavement ground
+    // Ground Grass / Pavement
     const groundGeo = new THREE.PlaneGeometry(TOWN_SIZE, TOWN_SIZE);
     const groundMat = new THREE.MeshStandardMaterial({
       color: 0x1e293b,
@@ -55,7 +54,7 @@ export class TownWorld {
       roughness: 0.8
     });
 
-    // 2. North-South Grand Avenue (Width: 16m)
+    // North-South Grand Avenue (Width: 16m)
     const nsRoadGeo = new THREE.PlaneGeometry(16, TOWN_SIZE);
     const nsRoad = new THREE.Mesh(nsRoadGeo, roadMat);
     nsRoad.rotation.x = -Math.PI / 2;
@@ -63,7 +62,7 @@ export class TownWorld {
     nsRoad.receiveShadow = true;
     this.group.add(nsRoad);
 
-    // 3. East-West Grand Boulevard (Width: 16m)
+    // East-West Grand Boulevard (Width: 16m)
     const ewRoadGeo = new THREE.PlaneGeometry(TOWN_SIZE, 16);
     const ewRoad = new THREE.Mesh(ewRoadGeo, roadMat);
     ewRoad.rotation.x = -Math.PI / 2;
@@ -71,7 +70,7 @@ export class TownWorld {
     ewRoad.receiveShadow = true;
     this.group.add(ewRoad);
 
-    // 4. Secondary Streets (North ring and South ring)
+    // Secondary Cross Streets
     [-80, 80].forEach((zCoord) => {
       const ringRoad = new THREE.Mesh(new THREE.PlaneGeometry(TOWN_SIZE, 12), roadMat);
       ringRoad.rotation.x = -Math.PI / 2;
@@ -86,16 +85,14 @@ export class TownWorld {
       this.group.add(ringRoad);
     });
 
-    // 5. Sidewalks bordering main avenues
+    // Sidewalks
     const swWidth = 3;
-    // NS Sidewalks
     const nsSwLeft = new THREE.Mesh(new THREE.BoxGeometry(swWidth, 0.2, TOWN_SIZE), sidewalkMat);
     nsSwLeft.position.set(-9.5, 0.1, 0);
     const nsSwRight = new THREE.Mesh(new THREE.BoxGeometry(swWidth, 0.2, TOWN_SIZE), sidewalkMat);
     nsSwRight.position.set(9.5, 0.1, 0);
     this.group.add(nsSwLeft, nsSwRight);
 
-    // EW Sidewalks
     const ewSwTop = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, 0.2, swWidth), sidewalkMat);
     ewSwTop.position.set(0, 0.1, -9.5);
     const ewSwBottom = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, 0.2, swWidth), sidewalkMat);
@@ -116,25 +113,21 @@ export class TownWorld {
     const nWall = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, wallHeight, wallThick), wallMat);
     nWall.position.set(0, wallHeight / 2, -half);
     this.group.add(nWall);
-    this.addCollider(-half, 0, -half - 1, half, wallHeight, -half + 1);
 
     // South
     const sWall = nWall.clone();
     sWall.position.set(0, wallHeight / 2, half);
     this.group.add(sWall);
-    this.addCollider(-half, 0, half - 1, half, wallHeight, half + 1);
 
     // West
     const wWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, wallHeight, TOWN_SIZE), wallMat);
     wWall.position.set(-half, wallHeight / 2, 0);
     this.group.add(wWall);
-    this.addCollider(-half - 1, 0, -half, -half + 1, wallHeight, half);
 
     // East
     const eWall = wWall.clone();
     eWall.position.set(half, wallHeight / 2, 0);
     this.group.add(eWall);
-    this.addCollider(half - 1, 0, -half, half + 1, wallHeight, half);
   }
 
   private buildPlayerEstates() {
@@ -154,21 +147,15 @@ export class TownWorld {
       const h = 10;
       const d = 16;
 
-      // Main Estate Manor
-      const manorGeo = new THREE.BoxGeometry(w, h, d);
-      const manor = new THREE.Mesh(manorGeo, brickMat);
+      const manor = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), brickMat);
       manor.position.y = h / 2;
       manor.castShadow = true;
       estateGroup.add(manor);
 
-      // Mansard Roof with specific house color trim
-      const roofGeo = new THREE.ConeGeometry(14, 5, 4);
-      const roofMat = new THREE.MeshStandardMaterial({
-        color: house.colorHex,
-        roughness: 0.4,
-        metalness: 0.2
-      });
-      const roof = new THREE.Mesh(roofGeo, roofMat);
+      const roof = new THREE.Mesh(
+        new THREE.ConeGeometry(14, 5, 4),
+        new THREE.MeshStandardMaterial({ color: house.colorHex, roughness: 0.4, metalness: 0.2 })
+      );
       roof.position.y = h + 2.5;
       roof.rotation.y = Math.PI / 4;
       roof.castShadow = true;
@@ -182,7 +169,7 @@ export class TownWorld {
       porch.position.set(0, 0.2, d / 2 + 2);
       estateGroup.add(porch);
 
-      // Grand Door (The winning target!)
+      // Target Estate Door
       const door = new THREE.Mesh(new THREE.BoxGeometry(2.4, 4.0, 0.3), woodDoorMat);
       door.position.set(0, 2.0, d / 2 + 0.15);
       estateGroup.add(door);
@@ -199,18 +186,9 @@ export class TownWorld {
       lanternLight.position.set(0, 4.5, d / 2 + 0.5);
       estateGroup.add(lanternLight);
 
-      // Estate Name Banner Plaque
-      const plaque = new THREE.Mesh(
-        new THREE.BoxGeometry(3.2, 0.8, 0.1),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3 })
-      );
-      plaque.position.set(0, 5.2, d / 2 + 0.2);
-      estateGroup.add(plaque);
-
       estateGroup.position.set(house.doorPos.x, 0, house.doorPos.z);
       this.group.add(estateGroup);
 
-      // Collider
       this.addCollider(
         house.doorPos.x - w / 2,
         0,
@@ -227,126 +205,320 @@ export class TownWorld {
     });
   }
 
-  private buildCivicDistricts() {
-    const facadeMat = new THREE.MeshStandardMaterial({
-      map: ProceduralTextures.getBuildingFacadeTexture(),
-      roughness: 0.6
+  private buildEnterableCivicBuildings() {
+    const wallBrick = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getBrickTexture('#78350f', '#d1d5db'),
+      roughness: 0.7
     });
 
-    const stoneMat = new THREE.MeshStandardMaterial({
+    const hospitalWall = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.4
+    });
+
+    const policeWall = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.5
+    });
+
+    const bankWall = new THREE.MeshStandardMaterial({
       color: 0xe2e8f0,
       roughness: 0.5
     });
 
-    // 1. City Hall & Courthouse (+75, 0)
-    const courtGroup = new THREE.Group();
-    const courtBase = new THREE.Mesh(new THREE.BoxGeometry(32, 14, 24), stoneMat);
-    courtBase.position.y = 7;
-    courtBase.castShadow = true;
-    courtGroup.add(courtBase);
+    const parquetFloorMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getWoodTexture(),
+      roughness: 0.4
+    });
 
-    // Classical Columns
-    for (let c = -12; c <= 12; c += 4) {
-      const col = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.6, 0.7, 10, 10),
-        stoneMat
-      );
-      col.position.set(c, 5, 13);
-      col.castShadow = true;
-      courtGroup.add(col);
-    }
-    courtGroup.position.set(75, 0, 0);
-    this.group.add(courtGroup);
-    this.addCollider(75 - 16, 0, -12, 75 + 16, 15, 14);
+    const tileFloorMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      roughness: 0.3
+    });
 
-    // 2. Central Hospital (-75, 0)
-    const hospGroup = new THREE.Group();
-    const hospBase = new THREE.Mesh(new THREE.BoxGeometry(34, 16, 24), stoneMat);
-    hospBase.position.y = 8;
-    hospBase.castShadow = true;
-    hospGroup.add(hospBase);
-
-    // Red Cross Neon Sign
-    const cross1 = new THREE.Mesh(
-      new THREE.BoxGeometry(4, 1.2, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x991b1b, emissiveIntensity: 1.0 })
-    );
-    cross1.position.set(0, 12, 12.2);
-    const cross2 = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 4, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x991b1b, emissiveIntensity: 1.0 })
-    );
-    cross2.position.set(0, 12, 12.2);
-    hospGroup.add(cross1, cross2);
-
-    hospGroup.position.set(-75, 0, 0);
-    this.group.add(hospGroup);
-    this.addCollider(-75 - 17, 0, -12, -75 + 17, 17, 12);
-
-    // 3. Le Grand Bistro Restaurant (0, -75)
+    // ============================================================
+    // 1. ENTERABLE RESTAURANT: Le Grand Bistro (0, -75)
+    // Size: Width 28m, Depth 20m, Height 8m.
+    // Front door opening: x in [-3, 3] at z = -65.
+    // ============================================================
     const restGroup = new THREE.Group();
-    const restBase = new THREE.Mesh(
-      new THREE.BoxGeometry(28, 10, 20),
-      new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.7 })
-    );
-    restBase.position.y = 5;
-    restBase.castShadow = true;
-    restGroup.add(restBase);
+    restGroup.position.set(0, 0, -75);
 
-    // Striped Awning
+    // Interior floor
+    const restFloor = new THREE.Mesh(new THREE.PlaneGeometry(28, 20), parquetFloorMat);
+    restFloor.rotation.x = -Math.PI / 2;
+    restFloor.position.y = 0.05;
+    restFloor.receiveShadow = true;
+    restGroup.add(restFloor);
+
+    // Ceiling / Roof
+    const restRoof = new THREE.Mesh(new THREE.BoxGeometry(29, 0.6, 21), wallBrick);
+    restRoof.position.y = 8;
+    restGroup.add(restRoof);
+
+    // Back wall (z = -10 relative to building center, absolute z = -85)
+    const restBack = new THREE.Mesh(new THREE.BoxGeometry(28, 8, 1), wallBrick);
+    restBack.position.set(0, 4, -10);
+    restGroup.add(restBack);
+
+    // Left wall (x = -14)
+    const restLeft = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 20), wallBrick);
+    restLeft.position.set(-14, 4, 0);
+    restGroup.add(restLeft);
+
+    // Right wall (x = 14)
+    const restRight = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 20), wallBrick);
+    restRight.position.set(14, 4, 0);
+    restGroup.add(restRight);
+
+    // Front Wall with 6m open double doorway in center:
+    // Left front section: x from -14 to -3
+    const restFrontLeft = new THREE.Mesh(new THREE.BoxGeometry(11, 8, 1), wallBrick);
+    restFrontLeft.position.set(-8.5, 4, 10);
+    // Right front section: x from 3 to 14
+    const restFrontRight = new THREE.Mesh(new THREE.BoxGeometry(11, 8, 1), wallBrick);
+    restFrontRight.position.set(8.5, 4, 10);
+    restGroup.add(restFrontLeft, restFrontRight);
+
+    // Striped Awning above open doorway
     const awning = new THREE.Mesh(
-      new THREE.BoxGeometry(26, 0.5, 4),
+      new THREE.BoxGeometry(8, 0.4, 3),
       new THREE.MeshStandardMaterial({ color: 0xd97706 })
     );
-    awning.position.set(0, 4.5, 11);
+    awning.position.set(0, 5, 11.5);
     restGroup.add(awning);
 
-    // Outdoor dining tables and chairs
-    for (let t = -8; t <= 8; t += 4) {
-      const table = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.8, 0.8, 0.9, 8),
-        new THREE.MeshStandardMaterial({ color: 0x334155 })
-      );
-      table.position.set(t, 0.45, 13);
-      restGroup.add(table);
-    }
+    // Warm Interior Chandeliers
+    const restLight = new THREE.PointLight(0xffedd5, 1.5, 16);
+    restLight.position.set(0, 6, 0);
+    restGroup.add(restLight);
 
-    restGroup.position.set(0, 0, -75);
+    // Interior Furniture: Polished Bar Counter inside along back wall
+    const barCounter = new THREE.Mesh(
+      new THREE.BoxGeometry(14, 1.2, 1.5),
+      new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.3 })
+    );
+    barCounter.position.set(0, 0.6, -7);
+    restGroup.add(barCounter);
+
+    // Dining tables inside
+    [-7, 7].forEach((tx) => {
+      [-2, 4].forEach((tz) => {
+        const table = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.0, 1.0, 0.9, 10),
+          new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.5 })
+        );
+        table.position.set(tx, 0.45, tz);
+        restGroup.add(table);
+      });
+    });
+
     this.group.add(restGroup);
-    this.addCollider(-14, 0, -75 - 10, 14, 11, -75 + 14);
 
-    // 4. Police Headquarters (0, 75)
+    // ============================================================
+    // 2. ENTERABLE HOSPITAL: Central Hospital (-75, 0)
+    // Size: Width 34m, Depth 24m, Height 8m.
+    // Front entrance opening: z in [-3, 3] at x = -58.
+    // ============================================================
+    const hospGroup = new THREE.Group();
+    hospGroup.position.set(-75, 0, 0);
+
+    const hospFloor = new THREE.Mesh(new THREE.PlaneGeometry(34, 24), tileFloorMat);
+    hospFloor.rotation.x = -Math.PI / 2;
+    hospFloor.position.y = 0.05;
+    hospFloor.receiveShadow = true;
+    hospGroup.add(hospFloor);
+
+    const hospRoof = new THREE.Mesh(new THREE.BoxGeometry(35, 0.6, 25), hospitalWall);
+    hospRoof.position.y = 8;
+    hospGroup.add(hospRoof);
+
+    // Back wall (x = -17 relative, absolute x = -92)
+    const hospBack = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 24), hospitalWall);
+    hospBack.position.set(-17, 4, 0);
+    hospGroup.add(hospBack);
+
+    // North wall (z = -12)
+    const hospNorth = new THREE.Mesh(new THREE.BoxGeometry(34, 8, 1), hospitalWall);
+    hospNorth.position.set(0, 4, -12);
+    hospGroup.add(hospNorth);
+
+    // South wall (z = 12)
+    const hospSouth = new THREE.Mesh(new THREE.BoxGeometry(34, 8, 1), hospitalWall);
+    hospSouth.position.set(0, 4, 12);
+    hospGroup.add(hospSouth);
+
+    // Front Wall (facing East towards center at x = 17, absolute x = -58) with open doorway
+    const hospFrontTop = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), hospitalWall);
+    hospFrontTop.position.set(17, 4, 7.5);
+    const hospFrontBottom = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), hospitalWall);
+    hospFrontBottom.position.set(17, 4, -7.5);
+    hospGroup.add(hospFrontTop, hospFrontBottom);
+
+    // Luminous Red Cross Sign above entrance
+    const cross1 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 1.2, 3),
+      new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0xb91c1c, emissiveIntensity: 1.5 })
+    );
+    cross1.position.set(17.2, 6, 0);
+    const cross2 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 3, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0xb91c1c, emissiveIntensity: 1.5 })
+    );
+    cross2.position.set(17.2, 6, 0);
+    hospGroup.add(cross1, cross2);
+
+    // Hospital Interior Reception Desk
+    const hospDesk = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 1.1, 7),
+      new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.3 })
+    );
+    hospDesk.position.set(11, 0.55, 0);
+    hospGroup.add(hospDesk);
+
+    // Hospital Triage Gurney / Beds inside
+    [-10, -4].forEach((bx) => {
+      [-6, 6].forEach((bz) => {
+        const bed = new THREE.Mesh(
+          new THREE.BoxGeometry(3.6, 0.8, 1.8),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 })
+        );
+        bed.position.set(bx, 0.4, bz);
+        hospGroup.add(bed);
+      });
+    });
+
+    const hospLight = new THREE.PointLight(0xe0f2fe, 1.8, 20);
+    hospLight.position.set(0, 6.5, 0);
+    hospGroup.add(hospLight);
+
+    this.group.add(hospGroup);
+
+    // ============================================================
+    // 3. ENTERABLE POLICE HQ & COURTHOUSE (0, 75)
+    // Size: Width 26m, Depth 20m, Height 8m.
+    // Front entrance opening: x in [-3, 3] at z = 65.
+    // ============================================================
     const policeGroup = new THREE.Group();
-    const policeBase = new THREE.Mesh(
-      new THREE.BoxGeometry(26, 12, 20),
-      new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 })
-    );
-    policeBase.position.y = 6;
-    policeBase.castShadow = true;
-    policeGroup.add(policeBase);
-
-    // Blue/Red Lightbar on roof
-    const siren = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 0.5, 0.8),
-      new THREE.MeshStandardMaterial({ color: 0x3b82f6, emissive: 0x2563eb, emissiveIntensity: 1.5 })
-    );
-    siren.position.set(0, 12.4, 0);
-    policeGroup.add(siren);
-
     policeGroup.position.set(0, 0, 75);
+
+    const policeFloor = new THREE.Mesh(new THREE.PlaneGeometry(26, 20), parquetFloorMat);
+    policeFloor.rotation.x = -Math.PI / 2;
+    policeFloor.position.y = 0.05;
+    policeFloor.receiveShadow = true;
+    policeGroup.add(policeFloor);
+
+    const policeRoof = new THREE.Mesh(new THREE.BoxGeometry(27, 0.6, 21), policeWall);
+    policeRoof.position.y = 8;
+    policeGroup.add(policeRoof);
+
+    // Back wall (z = 10 relative, absolute z = 85)
+    const polBack = new THREE.Mesh(new THREE.BoxGeometry(26, 8, 1), policeWall);
+    polBack.position.set(0, 4, 10);
+    policeGroup.add(polBack);
+
+    // Left wall (x = -13)
+    const polLeft = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 20), policeWall);
+    polLeft.position.set(-13, 4, 0);
+    policeGroup.add(polLeft);
+
+    // Right wall (x = 13)
+    const polRight = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 20), policeWall);
+    polRight.position.set(13, 4, 0);
+    policeGroup.add(polRight);
+
+    // Front Wall with open doorway at z = -10 (absolute z = 65)
+    const polFrontLeft = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 1), policeWall);
+    polFrontLeft.position.set(-8, 4, -10);
+    const polFrontRight = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 1), policeWall);
+    polFrontRight.position.set(8, 4, -10);
+    policeGroup.add(polFrontLeft, polFrontRight);
+
+    // Police Officer Sergeant Desk inside
+    const polDesk = new THREE.Mesh(
+      new THREE.BoxGeometry(6, 1.1, 2.5),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 })
+    );
+    polDesk.position.set(0, 0.55, -3);
+    policeGroup.add(polDesk);
+
+    // Police Evidence Lockers along back wall
+    const locker = new THREE.Mesh(
+      new THREE.BoxGeometry(10, 3.5, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 })
+    );
+    locker.position.set(0, 1.75, 8.5);
+    policeGroup.add(locker);
+
+    const polLight = new THREE.PointLight(0xbfdbfe, 1.5, 18);
+    polLight.position.set(0, 6.5, 0);
+    policeGroup.add(polLight);
+
     this.group.add(policeGroup);
-    this.addCollider(-13, 0, 75 - 10, 13, 13, 75 + 10);
+
+    // ============================================================
+    // 4. ENTERABLE CITY HALL & BANK (75, 0)
+    // Size: Width 32m, Depth 24m, Height 8m.
+    // Front entrance opening: z in [-3, 3] at x = 59.
+    // ============================================================
+    const bankGroup = new THREE.Group();
+    bankGroup.position.set(75, 0, 0);
+
+    const bankFloor = new THREE.Mesh(new THREE.PlaneGeometry(32, 24), tileFloorMat);
+    bankFloor.rotation.x = -Math.PI / 2;
+    bankFloor.position.y = 0.05;
+    bankFloor.receiveShadow = true;
+    bankGroup.add(bankFloor);
+
+    const bankRoof = new THREE.Mesh(new THREE.BoxGeometry(33, 0.6, 25), bankWall);
+    bankRoof.position.y = 8;
+    bankGroup.add(bankRoof);
+
+    // Back wall (x = 16, absolute x = 91)
+    const bankBack = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 24), bankWall);
+    bankBack.position.set(16, 4, 0);
+    bankGroup.add(bankBack);
+
+    // North wall (z = -12)
+    const bankNorth = new THREE.Mesh(new THREE.BoxGeometry(32, 8, 1), bankWall);
+    bankNorth.position.set(0, 4, -12);
+    bankGroup.add(bankNorth);
+
+    // South wall (z = 12)
+    const bankSouth = new THREE.Mesh(new THREE.BoxGeometry(32, 8, 1), bankWall);
+    bankSouth.position.set(0, 4, 12);
+    bankGroup.add(bankSouth);
+
+    // Front Wall (x = -16, absolute x = 59) with open doorway
+    const bankFrontTop = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), bankWall);
+    bankFrontTop.position.set(-16, 4, 7.5);
+    const bankFrontBottom = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), bankWall);
+    bankFrontBottom.position.set(-16, 4, -7.5);
+    bankGroup.add(bankFrontTop, bankFrontBottom);
+
+    // Bank Teller Counter inside
+    const tellerCounter = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 1.3, 14),
+      new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.4 })
+    );
+    tellerCounter.position.set(0, 0.65, 0);
+    bankGroup.add(tellerCounter);
+
+    const bankLight = new THREE.PointLight(0xfef9c3, 1.6, 20);
+    bankLight.position.set(0, 6.5, 0);
+    bankGroup.add(bankLight);
+
+    this.group.add(bankGroup);
   }
 
   private buildAmbushAlleysAndSlums() {
-    // Narrow back alleys with brick walls, dumpsters, wooden crates, and steam vents
     const brickMat = new THREE.MeshStandardMaterial({
       map: ProceduralTextures.getBrickTexture('#571c18', '#374151'),
       roughness: 0.85
     });
 
     const dumpsterMat = new THREE.MeshStandardMaterial({
-      color: 0x15803d, // Dark green industrial dumpster
+      color: 0x15803d,
       roughness: 0.6,
       metalness: 0.4
     });
@@ -356,7 +528,6 @@ export class TownWorld {
       roughness: 0.7
     });
 
-    // Create 4 distinct ambush alley complexes
     const alleyCoords = [
       { x: -35, z: -35 },
       { x: 35, z: -35 },
@@ -367,33 +538,26 @@ export class TownWorld {
     alleyCoords.forEach((coord) => {
       const alleyGroup = new THREE.Group();
 
-      // High flanking building walls creating narrow 3-meter blind passages
       const wall1 = new THREE.Mesh(new THREE.BoxGeometry(18, 12, 4), brickMat);
       wall1.position.set(-5, 6, 0);
       wall1.castShadow = true;
       alleyGroup.add(wall1);
-      this.addCollider(coord.x - 14, 0, coord.z - 2, coord.x + 4, 12, coord.z + 2);
 
       const wall2 = new THREE.Mesh(new THREE.BoxGeometry(18, 12, 4), brickMat);
       wall2.position.set(5, 6, 8);
       wall2.castShadow = true;
       alleyGroup.add(wall2);
-      this.addCollider(coord.x - 4, 0, coord.z + 6, coord.x + 14, 12, coord.z + 10);
 
-      // Dumpster for cover & ambushing
       const dumpster = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.4, 1.4), dumpsterMat);
       dumpster.position.set(-1, 0.7, 4);
       dumpster.castShadow = true;
       alleyGroup.add(dumpster);
-      this.addCollider(coord.x - 2.2, 0, coord.z + 3.3, coord.x + 0.2, 1.5, coord.z + 4.7);
 
-      // Wooden Crates stack
       const crate1 = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), crateMat);
       crate1.position.set(2, 0.5, 4);
       const crate2 = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), crateMat);
       crate2.position.set(2, 1.5, 4);
       alleyGroup.add(crate1, crate2);
-      this.addCollider(coord.x + 1.5, 0, coord.z + 3.5, coord.x + 2.5, 2.0, coord.z + 4.5);
 
       alleyGroup.position.set(coord.x, 0, coord.z);
       this.group.add(alleyGroup);
@@ -401,9 +565,8 @@ export class TownWorld {
   }
 
   private buildCentralParkAndPromenade() {
-    // Central Plaza & Park
-    const clockGroup = new THREE.Group();
     // 1. Cathedral Clocktower (0, -25)
+    const clockGroup = new THREE.Group();
     const towerMat = new THREE.MeshStandardMaterial({
       map: ProceduralTextures.getBrickTexture('#475569', '#cbd5e1'),
       roughness: 0.6
@@ -413,7 +576,6 @@ export class TownWorld {
     tower.castShadow = true;
     clockGroup.add(tower);
 
-    // Glowing Clock Faces
     const clockFace = new THREE.Mesh(
       new THREE.CircleGeometry(2.4, 16),
       new THREE.MeshBasicMaterial({ color: 0xfef08a })
@@ -423,7 +585,6 @@ export class TownWorld {
 
     clockGroup.position.set(0, 0, -25);
     this.group.add(clockGroup);
-    this.addCollider(-5, 0, -30, 5, 38, -20);
 
     // 2. Grand Promenade Tiered Fountain (0, 25)
     const fountainGroup = new THREE.Group();
@@ -442,7 +603,6 @@ export class TownWorld {
     water.position.y = 1.3;
     fountainGroup.add(water);
 
-    // Fountain Spire
     const spire = new THREE.Mesh(
       new THREE.CylinderGeometry(1.0, 1.6, 4, 10),
       new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
@@ -452,7 +612,6 @@ export class TownWorld {
 
     fountainGroup.position.set(0, 0, 25);
     this.group.add(fountainGroup);
-    this.addCollider(-8, 0, 17, 8, 4.5, 33);
 
     // 3. Ancient Oak Park (-50, -50)
     const treeGroup = new THREE.Group();
@@ -474,7 +633,6 @@ export class TownWorld {
 
     treeGroup.position.set(-50, 0, -50);
     this.group.add(treeGroup);
-    this.addCollider(-53, 0, -53, -47, 18, -47);
 
     // 4. Colossal Bronze Rooster Monument (50, 50)
     const monumentGroup = new THREE.Group();
@@ -496,72 +654,9 @@ export class TownWorld {
 
     monumentGroup.position.set(50, 0, 50);
     this.group.add(monumentGroup);
-    this.addCollider(47, 0, 47, 53, 9, 53);
-  }
-
-  private buildParkedVehicles() {
-    // Realistic sedans and police cruisers parked along avenues for cover
-    const vehicleSpots = [
-      { x: -11, z: -15, type: 'sedan', color: 0x0284c7 },
-      { x: 11, z: 18, type: 'police', color: 0x1e293b },
-      { x: -11, z: 45, type: 'sedan', color: 0xb91c1c },
-      { x: 11, z: -45, type: 'van', color: 0x475569 },
-      { x: 35, z: 11, type: 'sedan', color: 0xf59e0b }
-    ];
-
-    vehicleSpots.forEach((v) => {
-      const carGroup = new THREE.Group();
-
-      // Chassis
-      const chassis = new THREE.Mesh(
-        new THREE.BoxGeometry(2.2, 0.9, 4.6),
-        new THREE.MeshStandardMaterial({ color: v.color, roughness: 0.3, metalness: 0.6 })
-      );
-      chassis.position.y = 0.65;
-      chassis.castShadow = true;
-      carGroup.add(chassis);
-
-      // Cabin / Roof
-      const cabin = new THREE.Mesh(
-        new THREE.BoxGeometry(1.8, 0.7, 2.4),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2, metalness: 0.8 })
-      );
-      cabin.position.set(0, 1.35, -0.2);
-      cabin.castShadow = true;
-      carGroup.add(cabin);
-
-      // Wheels
-      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.8 });
-      [
-        { x: -1.1, z: 1.4 },
-        { x: 1.1, z: 1.4 },
-        { x: -1.1, z: -1.4 },
-        { x: 1.1, z: -1.4 }
-      ].forEach((wp) => {
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.25, 10), wheelMat);
-        wheel.rotation.z = Math.PI / 2;
-        wheel.position.set(wp.x, 0.35, wp.z);
-        carGroup.add(wheel);
-      });
-
-      // Police Lightbar if police
-      if (v.type === 'police') {
-        const lightbar = new THREE.Mesh(
-          new THREE.BoxGeometry(1.2, 0.15, 0.3),
-          new THREE.MeshStandardMaterial({ color: 0x3b82f6, emissive: 0x2563eb, emissiveIntensity: 1.5 })
-        );
-        lightbar.position.set(0, 1.75, -0.2);
-        carGroup.add(lightbar);
-      }
-
-      carGroup.position.set(v.x, 0, v.z);
-      this.group.add(carGroup);
-      this.addCollider(v.x - 1.2, 0, v.z - 2.4, v.x + 1.2, 1.8, v.z + 2.4);
-    });
   }
 
   private buildCityStreetlightsAndProps() {
-    // Realistic Victorian style streetlamps
     const lampCoords = [
       { x: -11, z: -30 }, { x: 11, z: -30 },
       { x: -11, z: 0 }, { x: 11, z: 0 },
@@ -591,7 +686,10 @@ export class TownWorld {
     });
   }
 
-  public checkCollision(pos: THREE.Vector3, radius: number = 0.5): boolean {
+  public checkCollision(pos: THREE.Vector3, radius: number = 0.45): boolean {
+    if (checkObstacleCollision(pos.x, pos.z, radius)) {
+      return true;
+    }
     for (let i = 0; i < this.colliders.length; i++) {
       const c = this.colliders[i];
       if (
