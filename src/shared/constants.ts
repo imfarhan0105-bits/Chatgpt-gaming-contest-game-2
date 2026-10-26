@@ -1,4 +1,4 @@
-import { HouseDefinition, NpcFaction, PlayerRole } from './types.ts';
+import type { HouseDefinition, NpcFaction, PlayerRole } from './types.ts';
 
 export const TOWN_SIZE = 120; // 120x120 meters town
 export const TOWN_WALL_HEIGHT = 6;
