@@ -29,38 +29,67 @@ export const PLAYER_ROLES: PlayerRole[] = ['pedestrian', 'waiter', 'doctor', 'la
 export const NPC_FACTIONS: NpcFaction[] = ['pedestrian', 'waiter', 'doctor', 'lawyer', 'guard', 'merchant'];
 
 // 4 Distinct Player Estates/Manors in the 4 corners of the large city
+export const HOUSE_ACCURATE_RIDDLES: Record<number, string[]> = {
+  0: [
+    'Beyond the central river crossing, head northwest towards the misty mountain ridge. Seek the cobalt estate nestled beneath the ancient spreading oak trees.',
+    'Where the northern cobblestone avenue meets the western foothills, search for the cobalt estate whose stone porch gazes at the snow-capped northwestern peaks.',
+    'Follow the riverbank northwest past the bistro to the botanical grove; your cobalt house door waits near the northwest stone perimeter wall.'
+  ],
+  1: [
+    'Where the gothic cathedral clocktower points its eastward morning shadow, seek the grand crimson brick manor overlooking the river bridge.',
+    'Head northeast across the town promenade toward the eastern mountain pass; search for the crimson estate flanked by stone lions and terracotta gables.',
+    'Directly east of the central clocktower, cross the arched stone bridge into the northeastern estates to find the crimson manor doorway.'
+  ],
+  2: [
+    'Southwest of the central tiered fountain, past the hospital gardens, an ivy-draped emerald villa doorway greets the valley breeze.',
+    'Follow the western avenue south toward the pine-covered hills; locate the emerald villa with twin iron lanterns beside the garden stone wall.',
+    'Take the path southwest between the central plaza and the hospital triage; your green estate stands before the southwestern mountain slopes.'
+  ],
+  3: [
+    'Directly in the piercing gaze of the colossal Bronze Rooster monument, your golden timber amber lodge stands near the southeastern foothills.',
+    'Head southeast from the grand fountain past the police headquarters; 40 meters east lies the warm amber lodge with its timber balcony.',
+    'Where the southern river bends towards the morning sun, search the southeastern district for the golden amber lodge beside the military depot.'
+  ]
+};
+
+export function getAccurateHouseRiddle(houseId: number, variationIndex: number = 0): string {
+  const pool = HOUSE_ACCURATE_RIDDLES[houseId] || HOUSE_ACCURATE_RIDDLES[0];
+  const idx = Math.abs(variationIndex) % pool.length;
+  return pool[idx];
+}
+
 export const HOUSES: HouseDefinition[] = [
   {
     id: 0,
     name: 'Cobalt Estate (House #1)',
     doorPos: { x: -80, y: 1.0, z: -80 },
     colorHex: 0x1d4ed8, // Royal Blue
-    landmarkNear: 'Ancient Oak Park & Conservatory',
-    riddleClue: 'Beneath the ancient botanical oak whose branches sweep northwest, find the azure estate where the roosters rest.'
+    landmarkNear: 'Ancient Oak Park & Northwest Mountains',
+    riddleClue: HOUSE_ACCURATE_RIDDLES[0][0]
   },
   {
     id: 1,
     name: 'Crimson Manor (House #2)',
     doorPos: { x: 80, y: 1.0, z: -80 },
     colorHex: 0xb91c1c, // Deep Red
-    landmarkNear: 'Grand Cathedral Clocktower',
-    riddleClue: 'Where the grand cathedral clocktower casts its eastward midday shadow, seek the ruby manor overlooking the plaza.'
+    landmarkNear: 'Grand Cathedral Clocktower & Stone Bridge',
+    riddleClue: HOUSE_ACCURATE_RIDDLES[1][0]
   },
   {
     id: 2,
     name: 'Emerald Villa (House #3)',
     doorPos: { x: -80, y: 1.0, z: 80 },
     colorHex: 0x047857, // Deep Emerald
-    landmarkNear: 'Central Grand Promenade Fountain',
-    riddleClue: 'Southwest of the grand tiered promenade fountain, an emerald villa doorway greets the evening breeze.'
+    landmarkNear: 'Central Grand Fountain & Hospital Grounds',
+    riddleClue: HOUSE_ACCURATE_RIDDLES[2][0]
   },
   {
     id: 3,
     name: 'Amber Lodge (House #4)',
     doorPos: { x: 80, y: 1.0, z: 80 },
     colorHex: 0xb45309, // Rich Amber
-    landmarkNear: 'Colossal Bronze Rooster Monument',
-    riddleClue: 'Directly in the piercing gaze of the colossal Bronze Rooster monument, your golden lodge awaits its master.'
+    landmarkNear: 'Colossal Bronze Rooster Monument & Police HQ',
+    riddleClue: HOUSE_ACCURATE_RIDDLES[3][0]
   }
 ];
 

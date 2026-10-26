@@ -1,5 +1,6 @@
 import {
   checkObstacleCollision,
+  getAccurateHouseRiddle,
   HOUSES,
   INTERACTION_DISTANCE,
   MATCH_DURATION_SECONDS,
@@ -871,7 +872,8 @@ export class GameRoom {
             player.activeSlot = 0;
 
             const houseDef = HOUSES[player.assignedHouse];
-            player.riddle = houseDef.riddleClue;
+            const variation = Math.floor(Math.random() * 3);
+            player.riddle = getAccurateHouseRiddle(houseDef.id, variation);
 
             this.sendTo(player.id, {
               type: 'collapse_event',

@@ -86,7 +86,7 @@ describe('Cock & Keys — Live Server E2E Tests', () => {
       client1.close();
       client2.close();
     } finally {
-      serverProcess.kill('SIGTERM');
+      serverProcess.kill('SIGKILL');
     }
   });
 });

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { checkObstacleCollision, HOUSES, INTERACTION_DISTANCE, NPC_RUN_SPEED, NPC_WALK_SPEED, ROOSTER_WALK_SPEED, WEAPON_STATS } from '../shared/constants.ts';
+import { checkObstacleCollision, getAccurateHouseRiddle, HOUSES, INTERACTION_DISTANCE, NPC_RUN_SPEED, NPC_WALK_SPEED, ROOSTER_WALK_SPEED, WEAPON_STATS } from '../shared/constants.ts';
 import type { GameSnapshot, ItemType, PlayerRole } from '../shared/types.ts';
 import { SoundEffects } from './audio.ts';
 import { PlayerControls } from './controls.ts';
@@ -505,6 +505,13 @@ export class CockAndKeysGame {
   }
 
   private handleInteractAction() {
+    // 1. Interactive Door Breach & Close (PUBG Style Door Operation)
+    const toggledDoor = this.town.tryToggleNearestDoor(this.controls.pos);
+    if (toggledDoor) {
+      this.audio.playDoorSound(toggledDoor.isOpen);
+      return;
+    }
+
     if (this.isOfflineMode) {
       for (const [id, mesh] of this.pickupMeshes.entries()) {
         if (mesh.position.distanceTo(this.controls.pos) < INTERACTION_DISTANCE + 1.2) {
@@ -515,7 +522,10 @@ export class CockAndKeysGame {
 
           if (id.includes('key')) {
             this.hasKey = true;
-            this.triggerCollapseSequence(HOUSES[0].riddleClue);
+            const houseId = this.myAssignedHouse ?? 0;
+            const variation = Math.floor(Math.random() * 3);
+            const riddle = getAccurateHouseRiddle(houseId, variation);
+            this.triggerCollapseSequence(riddle);
           } else {
             this.offlineInventory[2] = {
               id: 'scavenged_pistol',
@@ -706,22 +716,20 @@ export class CockAndKeysGame {
       const rightArm = mesh.getObjectByName('rightArm');
 
       if (npc.state === 'sitting') {
-        if (leftLeg) leftLeg.rotation.x = -Math.PI / 2;
-        if (rightLeg) rightLeg.rotation.x = -Math.PI / 2;
-        if (leftArm) leftArm.rotation.x = 0;
-        if (rightArm) rightArm.rotation.x = 0;
+        EntityMeshFactory.animateSittingNpcWithPhone(mesh, this.npcAnimTimer);
       } else if (npc.state === 'chatting') {
+        const leftLeg = mesh.getObjectByName('leftLeg');
+        const rightLeg = mesh.getObjectByName('rightLeg');
+        const rightArm = mesh.getObjectByName('rightArm');
+        const leftArm = mesh.getObjectByName('leftArm');
         if (leftLeg) leftLeg.rotation.x = 0;
         if (rightLeg) rightLeg.rotation.x = 0;
         const gesture = Math.sin(this.npcAnimTimer * 0.7) * 0.3;
         if (rightArm) rightArm.rotation.x = -0.5 + gesture;
         if (leftArm) leftArm.rotation.x = 0;
       } else {
-        const swing = Math.sin(this.npcAnimTimer + parseInt(id.replace(/\D/g, '') || '0', 10)) * 0.55;
-        if (leftLeg) leftLeg.rotation.x = swing;
-        if (rightLeg) rightLeg.rotation.x = -swing;
-        if (leftArm) leftArm.rotation.x = -swing * 0.7;
-        if (rightArm) rightArm.rotation.x = swing * 0.7;
+        const isRunner = id.endsWith('6') || id.endsWith('7') || id.endsWith('8') || id.endsWith('9');
+        EntityMeshFactory.animateWalkingHuman(mesh, this.npcAnimTimer + parseInt(id.replace(/\D/g, '') || '0', 10), isRunner);
       }
     }
 
@@ -811,15 +819,15 @@ export class CockAndKeysGame {
 
       mesh.rotation.y = entity.yaw + Math.PI;
 
-      const leftLeg = mesh.getObjectByName('leftLeg');
-      const rightLeg = mesh.getObjectByName('rightLeg');
-      const leftArm = mesh.getObjectByName('leftArm');
-      const rightArm = mesh.getObjectByName('rightArm');
-      const swing = Math.sin(this.npcAnimTimer * (isRunner ? 1.6 : 1.0)) * 0.6;
-      if (leftLeg) leftLeg.rotation.x = swing;
-      if (rightLeg) rightLeg.rotation.x = -swing;
-      if (leftArm) leftArm.rotation.x = -swing * 0.75;
-      if (rightArm) rightArm.rotation.x = swing * 0.75;
+      if (entity.activity === 'sit') {
+        EntityMeshFactory.animateSittingNpcWithPhone(mesh, this.npcAnimTimer);
+      } else if (entity.activity === 'chat') {
+        const rightArm = mesh.getObjectByName('rightArm');
+        const gesture = Math.sin(this.npcAnimTimer * 0.7) * 0.3;
+        if (rightArm) rightArm.rotation.x = -0.5 + gesture;
+      } else {
+        EntityMeshFactory.animateWalkingHuman(mesh, this.npcAnimTimer, isRunner);
+      }
     }
 
     // 2. Move Roosters
@@ -863,7 +871,15 @@ export class CockAndKeysGame {
   private updateInteractionPrompts() {
     let prompt: string | null = null;
 
-    if (this.isOfflineMode) {
+    // 1. Check Interactive Hinged Doors (PUBG Breach & Close)
+    for (const d of this.town.doors) {
+      if (d.pos.distanceTo(this.controls.pos) < 3.6) {
+        prompt = d.isOpen ? `Press [E] to Close ${d.name}` : `Press [E] to Open ${d.name}`;
+        break;
+      }
+    }
+
+    if (!prompt && this.isOfflineMode) {
       for (const [id, mesh] of this.pickupMeshes.entries()) {
         if (mesh.position.distanceTo(this.controls.pos) < INTERACTION_DISTANCE + 1.2) {
           prompt = id.includes('key') ? 'Press [E] to Pick Up Key' : 'Press [E] to Pick Up Weapon';
@@ -882,7 +898,7 @@ export class CockAndKeysGame {
       return;
     }
 
-    if (this.network.latestSnapshot) {
+    if (!prompt && this.network.latestSnapshot) {
       for (const [_, item] of Object.entries(this.network.latestSnapshot.pickups)) {
         const itemPos = new THREE.Vector3(item.pos.x, item.pos.y, item.pos.z);
         if (itemPos.distanceTo(this.controls.pos) < INTERACTION_DISTANCE + 1.2) {
@@ -929,22 +945,38 @@ export class CockAndKeysGame {
       this.localPlayerMesh.position.set(this.controls.pos.x, this.controls.pos.y, this.controls.pos.z);
       this.localPlayerMesh.rotation.y = this.controls.yaw + Math.PI;
 
-      const leftLeg = this.localPlayerMesh.getObjectByName('leftLeg');
-      const rightLeg = this.localPlayerMesh.getObjectByName('rightLeg');
-      const leftArm = this.localPlayerMesh.getObjectByName('leftArm');
-      const rightArm = this.localPlayerMesh.getObjectByName('rightArm');
-
       if (this.controls.isMoving()) {
-        const angle = Math.sin(this.controls.walkCycleTimer) * 0.55;
-        if (leftLeg) leftLeg.rotation.x = angle;
-        if (rightLeg) rightLeg.rotation.x = -angle;
-        if (leftArm) leftArm.rotation.x = -angle * 0.8;
-        if (rightArm) rightArm.rotation.x = this.controls.isAiming ? -Math.PI / 2 : angle * 0.8;
+        EntityMeshFactory.animateWalkingHuman(this.localPlayerMesh, this.controls.walkCycleTimer, this.controls.isSprinting());
+        if (this.controls.isAiming) {
+          const rightArm = this.localPlayerMesh.getObjectByName('rightArm');
+          if (rightArm) rightArm.rotation.x = -Math.PI / 2;
+        }
+      } else if (this.controls.isCrouching) {
+        const leftLeg = this.localPlayerMesh.getObjectByName('leftLeg');
+        const rightLeg = this.localPlayerMesh.getObjectByName('rightLeg');
+        const leftKnee = this.localPlayerMesh.getObjectByName('leftKnee');
+        const rightKnee = this.localPlayerMesh.getObjectByName('rightKnee');
+        const rightArm = this.localPlayerMesh.getObjectByName('rightArm');
+        if (leftLeg) leftLeg.rotation.x = -0.65;
+        if (rightLeg) rightLeg.rotation.x = -0.65;
+        if (leftKnee) leftKnee.rotation.x = 0.65;
+        if (rightKnee) rightKnee.rotation.x = 0.65;
+        if (rightArm) rightArm.rotation.x = this.controls.isAiming ? -Math.PI / 2 : 0;
+        this.localPlayerMesh.position.y = -0.35;
       } else {
+        const leftLeg = this.localPlayerMesh.getObjectByName('leftLeg');
+        const rightLeg = this.localPlayerMesh.getObjectByName('rightLeg');
+        const leftKnee = this.localPlayerMesh.getObjectByName('leftKnee');
+        const rightKnee = this.localPlayerMesh.getObjectByName('rightKnee');
+        const leftArm = this.localPlayerMesh.getObjectByName('leftArm');
+        const rightArm = this.localPlayerMesh.getObjectByName('rightArm');
         if (leftLeg) leftLeg.rotation.x = 0;
         if (rightLeg) rightLeg.rotation.x = 0;
+        if (leftKnee) leftKnee.rotation.x = 0;
+        if (rightKnee) rightKnee.rotation.x = 0;
         if (leftArm) leftArm.rotation.x = 0;
         if (rightArm) rightArm.rotation.x = this.controls.isAiming ? -Math.PI / 2 : 0;
+        this.localPlayerMesh.position.y = 0;
       }
     }
 

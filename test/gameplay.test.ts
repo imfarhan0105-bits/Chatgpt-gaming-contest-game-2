@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
-import { HOUSES, WEAPON_STATS } from '../src/shared/constants.ts';
+import { HOUSES, HOUSE_ACCURATE_RIDDLES, WEAPON_STATS } from '../src/shared/constants.ts';
 import { GameRoom } from '../src/server/room.ts';
 
 function createMockSocket() {
@@ -135,7 +135,10 @@ describe('Cock & Keys — Advanced Weapons, PvP & Game Rule Tests', () => {
     assert.equal(player.hasMemoryLoss, true);
     assert.equal(player.isSmiling, true);
     assert.ok(player.riddle);
-    assert.equal(player.riddle, HOUSES[player.assignedHouse].riddleClue);
+    assert.ok(
+      HOUSE_ACCURATE_RIDDLES[player.assignedHouse].includes(player.riddle),
+      'Riddle must belong to accurate clues for the assigned house'
+    );
 
     // Weapons dropped
     assert.equal(player.inventory[2], null, 'Weapons must drop at collapse location');

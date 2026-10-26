@@ -7,15 +7,30 @@ export interface BoxCollider {
   max: THREE.Vector3;
 }
 
+export interface InteractiveDoor {
+  id: string;
+  name: string;
+  group: THREE.Group;
+  hingePivot: THREE.Group;
+  doorMesh: THREE.Mesh;
+  isOpen: boolean;
+  baseYaw: number;
+  openYaw: number;
+  pos: THREE.Vector3;
+}
+
 export class TownWorld {
   public group: THREE.Group;
   public colliders: BoxCollider[] = [];
   public houseDoorColliders: { houseId: number; pos: THREE.Vector3 }[] = [];
   public grassInstances: THREE.InstancedMesh | null = null;
+  public doors: InteractiveDoor[] = [];
 
   constructor() {
     this.group = new THREE.Group();
     this.buildLushLawnsAndGround();
+    this.buildMountainValleysAndHills();
+    this.buildRiverAndStoneBridges();
     this.buildRoadsAndPromenades();
     this.buildPerimeterWalls();
     this.buildInstancedGrassTufts();
@@ -24,6 +39,89 @@ export class TownWorld {
     this.buildAmbushAlleysAndSlums();
     this.buildCentralParkAndPromenade();
     this.buildParkBenchesAndProps();
+    this.buildRealisticTreesAndHidingBushes();
+    this.buildTacticalMilitaryLootCrates();
+  }
+
+  public createHingedDoor(
+    id: string,
+    name: string,
+    pos: THREE.Vector3,
+    width: number = 2.4,
+    height: number = 3.6,
+    baseYaw: number = 0,
+    openYaw: number = Math.PI / 2
+  ): InteractiveDoor {
+    const group = new THREE.Group();
+    group.position.copy(pos);
+
+    // Architectural Door Frame
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x271714, roughness: 0.8 });
+    const leftPost = new THREE.Mesh(new THREE.BoxGeometry(0.14, height, 0.16), frameMat);
+    leftPost.position.set(-width / 2, height / 2, 0);
+    const rightPost = new THREE.Mesh(new THREE.BoxGeometry(0.14, height, 0.16), frameMat);
+    rightPost.position.set(width / 2, height / 2, 0);
+    const topLintel = new THREE.Mesh(new THREE.BoxGeometry(width + 0.28, 0.16, 0.16), frameMat);
+    topLintel.position.set(0, height, 0);
+    group.add(leftPost, rightPost, topLintel);
+
+    // Hinge Pivot at Left Post
+    const hingePivot = new THREE.Group();
+    hingePivot.position.set(-width / 2, 0, 0);
+    hingePivot.rotation.y = baseYaw;
+
+    const doorMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getWoodTexture(),
+      roughness: 0.5,
+      metalness: 0.1
+    });
+    const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.12), doorMat);
+    doorMesh.position.set(width / 2, height / 2, 0); // Offset so hinge is at left edge
+    doorMesh.castShadow = true;
+    hingePivot.add(doorMesh);
+
+    // Brass Doorknob Handle
+    const knob = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9, roughness: 0.2 })
+    );
+    knob.position.set(width - 0.2, height * 0.45, 0.09);
+    doorMesh.add(knob);
+
+    group.add(hingePivot);
+    this.group.add(group);
+
+    const door: InteractiveDoor = {
+      id,
+      name,
+      group,
+      hingePivot,
+      doorMesh,
+      isOpen: false,
+      baseYaw,
+      openYaw,
+      pos: pos.clone()
+    };
+    this.doors.push(door);
+    return door;
+  }
+
+  public tryToggleNearestDoor(playerPos: THREE.Vector3, reach: number = 3.6): InteractiveDoor | null {
+    let nearest: InteractiveDoor | null = null;
+    let minDist = reach;
+    for (const d of this.doors) {
+      const dist = d.pos.distanceTo(playerPos);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = d;
+      }
+    }
+    if (nearest) {
+      nearest.isOpen = !nearest.isOpen;
+      nearest.hingePivot.rotation.y = nearest.isOpen ? nearest.openYaw : nearest.baseYaw;
+      return nearest;
+    }
+    return null;
   }
 
   public addCollider(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number) {
@@ -227,11 +325,6 @@ export class TownWorld {
       porch.position.set(0, 0.2, d / 2 + 2);
       estateGroup.add(porch);
 
-      // Target Estate Door
-      const door = new THREE.Mesh(new THREE.BoxGeometry(2.4, 4.0, 0.3), woodDoorMat);
-      door.position.set(0, 2.0, d / 2 + 0.15);
-      estateGroup.add(door);
-
       // Glowing Welcome Lantern above Door
       const lantern = new THREE.Mesh(
         new THREE.SphereGeometry(0.3, 8, 8),
@@ -246,6 +339,15 @@ export class TownWorld {
 
       estateGroup.position.set(house.doorPos.x, 0, house.doorPos.z);
       this.group.add(estateGroup);
+
+      // Interactive Hinged Estate Entrance Door
+      this.createHingedDoor(
+        `estate_door_${house.id}`,
+        house.name,
+        new THREE.Vector3(house.doorPos.x, 0, house.doorPos.z + d / 2 + 0.15),
+        2.4,
+        4.0
+      );
 
       this.houseDoorColliders.push({
         houseId: house.id,
@@ -324,6 +426,20 @@ export class TownWorld {
     awning.position.set(0, 5, 11.5);
     restGroup.add(awning);
 
+    // Front Window Panes
+    const windowMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getGlassWindowTexture(),
+      roughness: 0.1,
+      metalness: 0.7,
+      transparent: true,
+      opacity: 0.85
+    });
+    [-8.5, 8.5].forEach((wx) => {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.6, 0.1), windowMat);
+      win.position.set(wx, 4.2, 10.55);
+      restGroup.add(win);
+    });
+
     const restLight = new THREE.PointLight(0xffedd5, 1.5, 16);
     restLight.position.set(0, 6, 0);
     restGroup.add(restLight);
@@ -347,6 +463,9 @@ export class TownWorld {
     });
 
     this.group.add(restGroup);
+
+    // Interactive Hinged Bistro Entrance Door
+    this.createHingedDoor('bistro_door', 'Le Grand Bistro Entrance', new THREE.Vector3(0, 0, -65), 2.8, 3.8);
 
     // 2. ONLY ONE SINGLE CENTRAL HOSPITAL: Central Hospital (-75, 0)
     const hospGroup = new THREE.Group();
@@ -379,6 +498,12 @@ export class TownWorld {
     const hospFrontBottom = new THREE.Mesh(new THREE.BoxGeometry(1, 8, 9), hospitalWall);
     hospFrontBottom.position.set(17, 4, -7.5);
     hospGroup.add(hospFrontTop, hospFrontBottom);
+
+    [-7.5, 7.5].forEach((wz) => {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.6, 3.6), windowMat);
+      win.position.set(17.1, 4.2, wz);
+      hospGroup.add(win);
+    });
 
     // Luminous Red Cross Sign
     const cross1 = new THREE.Mesh(
@@ -417,6 +542,9 @@ export class TownWorld {
 
     this.group.add(hospGroup);
 
+    // Interactive Hinged Hospital Emergency Entrance
+    this.createHingedDoor('hospital_door', 'Central Hospital Emergency Door', new THREE.Vector3(-58, 0, 0), 2.8, 3.8, Math.PI / 2, 0);
+
     // 3. ENTERABLE POLICE HQ (0, 75)
     const policeGroup = new THREE.Group();
     policeGroup.position.set(0, 0, 75);
@@ -449,6 +577,12 @@ export class TownWorld {
     polFrontRight.position.set(8, 4, -10);
     policeGroup.add(polFrontLeft, polFrontRight);
 
+    [-8, 8].forEach((wx) => {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.6, 0.1), windowMat);
+      win.position.set(wx, 4.2, -10.55);
+      policeGroup.add(win);
+    });
+
     const polDesk = new THREE.Mesh(
       new THREE.BoxGeometry(6, 1.1, 2.5),
       new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 })
@@ -468,6 +602,9 @@ export class TownWorld {
     policeGroup.add(polLight);
 
     this.group.add(policeGroup);
+
+    // Interactive Hinged Police Precinct Door
+    this.createHingedDoor('police_door', 'Police Precinct Entrance', new THREE.Vector3(0, 0, 65), 2.8, 3.8);
 
     // 4. ENTERABLE CITY HALL & BANK (75, 0)
     const bankGroup = new THREE.Group();
@@ -513,6 +650,9 @@ export class TownWorld {
     bankGroup.add(bankLight);
 
     this.group.add(bankGroup);
+
+    // Interactive Hinged City Hall & Bank Entrance Door
+    this.createHingedDoor('bank_door', 'City Hall & Bank Entrance', new THREE.Vector3(59, 0, 0), 2.8, 3.8, -Math.PI / 2, -Math.PI);
   }
 
   private buildAmbushAlleysAndSlums() {
@@ -569,23 +709,114 @@ export class TownWorld {
   }
 
   private buildCentralParkAndPromenade() {
-    // 1. Cathedral Clocktower (0, -25)
+    // 1. Cathedral Clocktower (0, -25) - Majestic Gothic Cathedral with 4 Working Clock Faces
     const clockGroup = new THREE.Group();
+
+    // Cathedral Nave Base
+    const baseMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getBrickTexture('#334155', '#94a3b8'),
+      roughness: 0.65
+    });
+    const nave = new THREE.Mesh(new THREE.BoxGeometry(20, 14, 26), baseMat);
+    nave.position.set(0, 7, 8);
+    nave.castShadow = true;
+    nave.receiveShadow = true;
+    clockGroup.add(nave);
+
+    // Gothic Cathedral Transept Portal
+    const portalMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getWoodTexture(),
+      roughness: 0.5
+    });
+    const cathedralDoor = new THREE.Mesh(new THREE.BoxGeometry(4.5, 7.5, 0.4), portalMat);
+    cathedralDoor.position.set(0, 3.75, 21.1);
+    clockGroup.add(cathedralDoor);
+
+    // Main Tower Shaft
     const towerMat = new THREE.MeshStandardMaterial({
       map: ProceduralTextures.getBrickTexture('#475569', '#cbd5e1'),
       roughness: 0.6
     });
-    const tower = new THREE.Mesh(new THREE.BoxGeometry(10, 36, 10), towerMat);
-    tower.position.y = 18;
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(11, 40, 11), towerMat);
+    tower.position.y = 20;
     tower.castShadow = true;
     clockGroup.add(tower);
 
-    const clockFace = new THREE.Mesh(
-      new THREE.CircleGeometry(2.4, 16),
-      new THREE.MeshBasicMaterial({ color: 0xfef08a })
+    // Corner Stone Buttresses
+    const buttressMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 });
+    [-5.6, 5.6].forEach((bx) => {
+      [-5.6, 5.6].forEach((bz) => {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 32, 1.6), buttressMat);
+        b.position.set(bx, 16, bz);
+        clockGroup.add(b);
+      });
+    });
+
+    // 4 Ornate Roman Numeral Clock Faces (North, South, East, West)
+    const clockFaceTex = ProceduralTextures.getClockFaceTexture();
+    const clockMat = new THREE.MeshStandardMaterial({
+      map: clockFaceTex,
+      roughness: 0.3,
+      metalness: 0.1
+    });
+
+    const clockRadius = 3.6;
+    const clockY = 32;
+
+    // North Face (facing +Z into town plaza)
+    const northClock = new THREE.Mesh(new THREE.CircleGeometry(clockRadius, 32), clockMat);
+    northClock.position.set(0, clockY, 5.56);
+    // South Face (facing -Z towards mountain ridge)
+    const southClock = new THREE.Mesh(new THREE.CircleGeometry(clockRadius, 32), clockMat);
+    southClock.rotation.y = Math.PI;
+    southClock.position.set(0, clockY, -5.56);
+    // East Face (facing +X)
+    const eastClock = new THREE.Mesh(new THREE.CircleGeometry(clockRadius, 32), clockMat);
+    eastClock.rotation.y = Math.PI / 2;
+    eastClock.position.set(5.56, clockY, 0);
+    // West Face (facing -X)
+    const westClock = new THREE.Mesh(new THREE.CircleGeometry(clockRadius, 32), clockMat);
+    westClock.rotation.y = -Math.PI / 2;
+    westClock.position.set(-5.56, clockY, 0);
+
+    clockGroup.add(northClock, southClock, eastClock, westClock);
+
+    // Warm Clocktower ambient lantern
+    const clockLight = new THREE.PointLight(0xfef08a, 1.5, 35);
+    clockLight.position.set(0, clockY, 0);
+    clockGroup.add(clockLight);
+
+    // Belfry with Bronze Church Bell
+    const belfryMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
+    const belfry = new THREE.Mesh(new THREE.BoxGeometry(9.6, 8, 9.6), belfryMat);
+    belfry.position.y = 44;
+    clockGroup.add(belfry);
+
+    const bronzeBell = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.8, 1.8, 2.2, 12),
+      new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.9, roughness: 0.25 })
     );
-    clockFace.position.set(0, 28, 5.05);
-    clockGroup.add(clockFace);
+    bronzeBell.position.set(0, 43.5, 0);
+    clockGroup.add(bronzeBell);
+
+    // Copper Cathedral Spire & Weather Cross
+    const copperRoofMat = new THREE.MeshStandardMaterial({
+      color: 0x0d9488, // Weathered copper verdigris green
+      roughness: 0.45,
+      metalness: 0.3
+    });
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(6.2, 22, 8), copperRoofMat);
+    spire.position.y = 59;
+    spire.castShadow = true;
+    clockGroup.add(spire);
+
+    const crossMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9, roughness: 0.1 });
+    const crossPole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.8, 6), crossMat);
+    crossPole.position.y = 71;
+    const crossArm = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.6, 6), crossMat);
+    crossArm.rotation.z = Math.PI / 2;
+    crossArm.position.y = 71.5;
+    clockGroup.add(crossPole, crossArm);
 
     clockGroup.position.set(0, 0, -25);
     this.group.add(clockGroup);
@@ -607,12 +838,12 @@ export class TownWorld {
     water.position.y = 1.3;
     fountainGroup.add(water);
 
-    const spire = new THREE.Mesh(
+    const fountainPillar = new THREE.Mesh(
       new THREE.CylinderGeometry(1.0, 1.6, 4, 10),
       new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
     );
-    spire.position.y = 2.5;
-    fountainGroup.add(spire);
+    fountainPillar.position.y = 2.5;
+    fountainGroup.add(fountainPillar);
 
     fountainGroup.position.set(0, 0, 25);
     this.group.add(fountainGroup);
@@ -728,6 +959,248 @@ export class TownWorld {
       const light = new THREE.PointLight(0xfef08a, 0.8, 18);
       light.position.set(lp.x, 4.8, lp.z);
       this.group.add(light);
+    });
+  }
+
+  private buildMountainValleysAndHills() {
+    const mountainMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getMountainRockTexture(),
+      roughness: 0.9,
+      metalness: 0.05
+    });
+
+    const snowMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.4
+    });
+
+    // 12 Alpine Mountain Peaks encircling the town valley (GTA / PUBG mountainous landscape)
+    const peakCoords = [
+      { angle: 0, dist: 185, h: 72, r: 42 },
+      { angle: Math.PI / 6, dist: 195, h: 84, r: 48 },
+      { angle: Math.PI / 3, dist: 180, h: 68, r: 38 },
+      { angle: Math.PI / 2, dist: 190, h: 78, r: 44 },
+      { angle: (2 * Math.PI) / 3, dist: 185, h: 82, r: 46 },
+      { angle: (5 * Math.PI) / 6, dist: 200, h: 90, r: 52 },
+      { angle: Math.PI, dist: 185, h: 75, r: 40 },
+      { angle: (7 * Math.PI) / 6, dist: 195, h: 88, r: 50 },
+      { angle: (4 * Math.PI) / 3, dist: 180, h: 70, r: 42 },
+      { angle: (3 * Math.PI) / 2, dist: 190, h: 80, r: 46 },
+      { angle: (5 * Math.PI) / 3, dist: 185, h: 85, r: 48 },
+      { angle: (11 * Math.PI) / 6, dist: 195, h: 76, r: 44 }
+    ];
+
+    peakCoords.forEach((p) => {
+      const px = Math.cos(p.angle) * p.dist;
+      const pz = Math.sin(p.angle) * p.dist;
+
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(p.r, p.h, 7), mountainMat);
+      cone.position.set(px, p.h / 2, pz);
+      cone.rotation.y = p.angle;
+      cone.castShadow = true;
+      cone.receiveShadow = true;
+      this.group.add(cone);
+
+      // Snow-capped peak summit
+      const snow = new THREE.Mesh(new THREE.ConeGeometry(p.r * 0.35, p.h * 0.28, 7), snowMat);
+      snow.position.set(px, p.h - (p.h * 0.28) / 2, pz);
+      snow.rotation.y = p.angle;
+      this.group.add(snow);
+    });
+
+    // Rolling green foothills
+    const foothillMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getLushGrassTexture(),
+      roughness: 0.85
+    });
+    for (let i = 0; i < 16; i++) {
+      const angle = (i / 16) * Math.PI * 2;
+      const fx = Math.cos(angle) * 145;
+      const fz = Math.sin(angle) * 145;
+      const hill = new THREE.Mesh(new THREE.SphereGeometry(22, 10, 8), foothillMat);
+      hill.scale.set(1.4, 0.45, 1.2);
+      hill.position.set(fx, 3, fz);
+      this.group.add(hill);
+    }
+  }
+
+  private buildRiverAndStoneBridges() {
+    // River Canal running across town at z = -45
+    const riverY = -0.35;
+    const riverZ = -45;
+    const riverWidth = 14;
+
+    const riverBed = new THREE.Mesh(
+      new THREE.PlaneGeometry(TOWN_SIZE, riverWidth),
+      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 })
+    );
+    riverBed.rotation.x = -Math.PI / 2;
+    riverBed.position.set(0, -0.7, riverZ);
+    this.group.add(riverBed);
+
+    const waterMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getWaterTexture(),
+      roughness: 0.1,
+      metalness: 0.6,
+      transparent: true,
+      opacity: 0.88
+    });
+    const riverWater = new THREE.Mesh(new THREE.PlaneGeometry(TOWN_SIZE, riverWidth), waterMat);
+    riverWater.rotation.x = -Math.PI / 2;
+    riverWater.position.set(0, riverY, riverZ);
+    this.group.add(riverWater);
+
+    // Stone Embankments along north and south riverbanks
+    const bankMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getCobblestoneTexture(),
+      roughness: 0.7
+    });
+    const northBank = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, 0.8, 1.2), bankMat);
+    northBank.position.set(0, 0.05, riverZ - riverWidth / 2);
+    const southBank = new THREE.Mesh(new THREE.BoxGeometry(TOWN_SIZE, 0.8, 1.2), bankMat);
+    southBank.position.set(0, 0.05, riverZ + riverWidth / 2);
+    this.group.add(northBank, southBank);
+
+    // 3 Arched Stone Bridges: West Bridge (-80), Central Grand Promenade Bridge (0), East Bridge (80)
+    [-80, 0, 80].forEach((bx) => {
+      const bridgeGroup = new THREE.Group();
+      bridgeGroup.position.set(bx, 0, riverZ);
+
+      const bridgeWidth = bx === 0 ? 18 : 12;
+
+      const deckMat = new THREE.MeshStandardMaterial({
+        map: ProceduralTextures.getCobblestoneTexture(),
+        roughness: 0.6
+      });
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(bridgeWidth, 0.6, riverWidth + 3), deckMat);
+      deck.position.y = 0.25;
+      deck.receiveShadow = true;
+      bridgeGroup.add(deck);
+
+      // Balustrades (left and right stone railings)
+      const railMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 });
+      const leftRail = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, riverWidth + 3), railMat);
+      leftRail.position.set(-bridgeWidth / 2 + 0.25, 0.85, 0);
+      const rightRail = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, riverWidth + 3), railMat);
+      rightRail.position.set(bridgeWidth / 2 - 0.25, 0.85, 0);
+      bridgeGroup.add(leftRail, rightRail);
+
+      // Streetlamps on bridge corners
+      [-bridgeWidth / 2 + 0.5, bridgeWidth / 2 - 0.5].forEach((lx) => {
+        [-riverWidth / 2, riverWidth / 2].forEach((lz) => {
+          const lamp = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.08, 0.1, 2.8, 6),
+            new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 })
+          );
+          lamp.position.set(lx, 1.6, lz);
+          const bulb = new THREE.Mesh(
+            new THREE.SphereGeometry(0.2, 6, 6),
+            new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfde047, emissiveIntensity: 1.2 })
+          );
+          bulb.position.set(lx, 3.0, lz);
+          bridgeGroup.add(lamp, bulb);
+        });
+      });
+
+      this.group.add(bridgeGroup);
+    });
+  }
+
+  private buildRealisticTreesAndHidingBushes() {
+    const barkMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getBarkTexture(),
+      roughness: 0.85
+    });
+    const leafMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getFoliageTexture(),
+      roughness: 0.75
+    });
+
+    // 36 Organic 3D Trees with branching trunks & multi-tier layered foliage
+    const treeLocations = [
+      { x: -110, z: -55 }, { x: -95, z: -35 }, { x: -60, z: -55 }, { x: -35, z: -35 },
+      { x: -18, z: -55 }, { x: 20, z: -35 }, { x: 45, z: -55 }, { x: 65, z: -35 },
+      { x: 100, z: -55 }, { x: 115, z: -35 },
+      { x: -25, z: 15 }, { x: 25, z: 15 }, { x: -25, z: 35 }, { x: 25, z: 35 },
+      { x: -35, z: 0 }, { x: 35, z: 0 },
+      { x: -65, z: -95 }, { x: -95, z: -65 }, { x: -98, z: -98 },
+      { x: 65, z: -95 }, { x: 95, z: -65 }, { x: 98, z: -98 },
+      { x: -65, z: 95 }, { x: -95, z: 65 }, { x: -98, z: 98 },
+      { x: 65, z: 95 }, { x: 95, z: 65 }, { x: 98, z: 98 },
+      { x: -50, z: -15 }, { x: 50, z: -15 }, { x: -50, z: 15 }, { x: 50, z: 15 },
+      { x: -15, z: -85 }, { x: 15, z: -85 }, { x: -15, z: 85 }, { x: 15, z: 85 }
+    ];
+
+    treeLocations.forEach((loc, idx) => {
+      const treeGroup = new THREE.Group();
+      treeGroup.position.set(loc.x, 0, loc.z);
+
+      const height = 9 + (idx % 4) * 1.5;
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.65, height, 8),
+        barkMat
+      );
+      trunk.position.y = height / 2;
+      trunk.castShadow = true;
+      treeGroup.add(trunk);
+
+      const crown1 = new THREE.Mesh(new THREE.DodecahedronGeometry(3.4, 1), leafMat);
+      crown1.position.set(0, height + 1.2, 0);
+      crown1.castShadow = true;
+
+      const crown2 = new THREE.Mesh(new THREE.DodecahedronGeometry(2.6, 1), leafMat);
+      crown2.position.set(1.4, height + 0.4, 0.8);
+      crown2.castShadow = true;
+
+      const crown3 = new THREE.Mesh(new THREE.DodecahedronGeometry(2.4, 1), leafMat);
+      crown3.position.set(-1.2, height + 0.6, -0.7);
+      crown3.castShadow = true;
+
+      treeGroup.add(crown1, crown2, crown3);
+      this.group.add(treeGroup);
+    });
+
+    // 55 Dense Camouflage Bushes (PUBG Tactical Hiding Spots)
+    const bushMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getFoliageTexture(),
+      roughness: 0.8
+    });
+
+    for (let i = 0; i < 55; i++) {
+      const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(1.6, 1), bushMat);
+      bush.scale.set(1.2 + (i % 3) * 0.2, 0.9, 1.1 + (i % 2) * 0.2);
+
+      const angle = (i / 55) * Math.PI * 2;
+      const r = 25 + (i % 5) * 18;
+      const bx = Math.cos(angle) * r + (((i * 17) % 11) - 5);
+      const bz = Math.sin(angle) * r + (((i * 13) % 11) - 5);
+
+      bush.position.set(bx, 0.8, bz);
+      bush.castShadow = true;
+      this.group.add(bush);
+    }
+  }
+
+  private buildTacticalMilitaryLootCrates() {
+    const crateMat = new THREE.MeshStandardMaterial({
+      map: ProceduralTextures.getMilitaryCrateTexture(),
+      roughness: 0.5,
+      metalness: 0.3
+    });
+
+    const crateSpots = [
+      { x: -33, z: -33 }, { x: 33, z: -33 },
+      { x: -33, z: 33 }, { x: 33, z: 33 },
+      { x: 0, z: -62 }, { x: -56, z: 0 },
+      { x: 56, z: 0 }, { x: 0, z: 62 }
+    ];
+
+    crateSpots.forEach((s) => {
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 1.4), crateMat);
+      crate.position.set(s.x, 0.7, s.z);
+      crate.castShadow = true;
+      crate.receiveShadow = true;
+      this.group.add(crate);
     });
   }
 

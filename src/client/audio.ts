@@ -207,6 +207,42 @@ export class SoundEffects {
     osc.stop(now + 1.2);
   }
 
+  public playDoorSound(isOpen: boolean) {
+    this.initContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    // Latch click
+    const clickOsc = this.ctx.createOscillator();
+    const clickGain = this.ctx.createGain();
+    clickOsc.type = 'triangle';
+    clickOsc.frequency.setValueAtTime(isOpen ? 650 : 380, now);
+    clickOsc.frequency.exponentialRampToValueAtTime(120, now + 0.05);
+
+    clickGain.gain.setValueAtTime(0.3, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.01, now + 0.06);
+
+    clickOsc.connect(clickGain);
+    clickGain.connect(this.ctx.destination);
+    clickOsc.start(now);
+    clickOsc.stop(now + 0.06);
+
+    // Wood swing creak or door frame thud
+    const woodOsc = this.ctx.createOscillator();
+    const woodGain = this.ctx.createGain();
+    woodOsc.type = isOpen ? 'sawtooth' : 'square';
+    woodOsc.frequency.setValueAtTime(isOpen ? 110 : 70, now + 0.04);
+    woodOsc.frequency.exponentialRampToValueAtTime(isOpen ? 220 : 30, now + (isOpen ? 0.28 : 0.16));
+
+    woodGain.gain.setValueAtTime(isOpen ? 0.18 : 0.35, now + 0.04);
+    woodGain.gain.exponentialRampToValueAtTime(0.01, now + (isOpen ? 0.3 : 0.18));
+
+    woodOsc.connect(woodGain);
+    woodGain.connect(this.ctx.destination);
+    woodOsc.start(now + 0.04);
+    woodOsc.stop(now + (isOpen ? 0.3 : 0.18));
+  }
+
   public playWin() {
     this.initContext();
     if (!this.ctx) return;

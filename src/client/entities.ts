@@ -199,6 +199,17 @@ export class EntityMeshFactory {
       headGroup.add(brow);
     });
 
+    // Ears on sides of head
+    [-0.175, 0.175].forEach((xPos) => {
+      const ear = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, 6, 6),
+        skinMat
+      );
+      ear.scale.set(0.4, 0.8, 0.6);
+      ear.position.set(xPos, 0.01, 0.0);
+      headGroup.add(ear);
+    });
+
     // Nose
     const nose = new THREE.Mesh(
       new THREE.ConeGeometry(0.025, 0.06, 6),
@@ -223,77 +234,135 @@ export class EntityMeshFactory {
 
     characterGroup.add(headGroup);
 
-    // ================= 4. ARMS & HANDS =================
+    // ================= 4. ARTICULATED ARMS (Shoulder -> Forearm -> Hand) =================
+    // Left Arm
     const leftArmGroup = new THREE.Group();
     leftArmGroup.name = 'leftArm';
     leftArmGroup.position.set(-0.35, 1.55, 0);
 
-    const leftArm = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.07, 0.06, 0.58, 8),
+    const leftUpperArm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.06, 0.32, 8),
       suitMat
     );
-    leftArm.position.y = -0.28;
-    leftArm.castShadow = true;
-    leftArmGroup.add(leftArm);
+    leftUpperArm.position.y = -0.16;
+    leftUpperArm.castShadow = true;
+    leftArmGroup.add(leftUpperArm);
+
+    const leftForearmGroup = new THREE.Group();
+    leftForearmGroup.name = 'leftForearm';
+    leftForearmGroup.position.set(0, -0.32, 0);
+
+    const leftForearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.058, 0.05, 0.30, 8),
+      suitMat
+    );
+    leftForearm.position.y = -0.15;
+    leftForearm.castShadow = true;
+    leftForearmGroup.add(leftForearm);
 
     const leftHand = new THREE.Mesh(
-      new THREE.SphereGeometry(0.06, 8, 8),
+      new THREE.SphereGeometry(0.055, 8, 8),
       skinMat
     );
-    leftHand.position.y = -0.6;
-    leftArmGroup.add(leftHand);
+    leftHand.position.y = -0.32;
+    leftForearmGroup.add(leftHand);
+
+    leftArmGroup.add(leftForearmGroup);
     characterGroup.add(leftArmGroup);
 
-    // Right Arm (Weapon Hand)
+    // Right Arm (Weapon & Phone Arm)
     const rightArmGroup = new THREE.Group();
     rightArmGroup.name = 'rightArm';
     rightArmGroup.position.set(0.35, 1.55, 0);
 
-    const rightArm = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.07, 0.06, 0.58, 8),
+    const rightUpperArm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.06, 0.32, 8),
       suitMat
     );
-    rightArm.position.y = -0.28;
-    rightArm.castShadow = true;
-    rightArmGroup.add(rightArm);
+    rightUpperArm.position.y = -0.16;
+    rightUpperArm.castShadow = true;
+    rightArmGroup.add(rightUpperArm);
+
+    const rightForearmGroup = new THREE.Group();
+    rightForearmGroup.name = 'rightForearm';
+    rightForearmGroup.position.set(0, -0.32, 0);
+
+    const rightForearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.058, 0.05, 0.30, 8),
+      suitMat
+    );
+    rightForearm.position.y = -0.15;
+    rightForearm.castShadow = true;
+    rightForearmGroup.add(rightForearm);
 
     const rightHand = new THREE.Mesh(
-      new THREE.SphereGeometry(0.06, 8, 8),
+      new THREE.SphereGeometry(0.055, 8, 8),
       skinMat
     );
-    rightHand.position.y = -0.6;
-    rightArmGroup.add(rightHand);
+    rightHand.position.y = -0.32;
+    rightForearmGroup.add(rightHand);
 
     // Weapon Attach Socket
     const weaponSocket = new THREE.Group();
     weaponSocket.name = 'weaponSocket';
-    weaponSocket.position.set(0, -0.62, 0.08);
-    rightArmGroup.add(weaponSocket);
+    weaponSocket.position.set(0, -0.34, 0.08);
+    rightForearmGroup.add(weaponSocket);
 
+    // Smartphone Prop Socket (for sitting / talking NPCs)
+    const phoneProp = new THREE.Group();
+    phoneProp.name = 'smartphoneProp';
+    const phoneBody = new THREE.Mesh(
+      new THREE.BoxGeometry(0.07, 0.14, 0.012),
+      new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.8, roughness: 0.2 })
+    );
+    const phoneScreen = new THREE.Mesh(
+      new THREE.BoxGeometry(0.062, 0.125, 0.005),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    phoneScreen.position.z = 0.007;
+    phoneProp.add(phoneBody, phoneScreen);
+    phoneProp.position.set(0, -0.32, 0.04);
+    phoneProp.visible = false;
+    rightForearmGroup.add(phoneProp);
+
+    rightArmGroup.add(rightForearmGroup);
     characterGroup.add(rightArmGroup);
 
-    // ================= 5. LEGS & SHOES =================
+    // ================= 5. ARTICULATED LEGS (Hip -> Thigh -> Knee -> Shin/Calf -> Shoe) =================
+    // Left Leg
     const leftLegGroup = new THREE.Group();
     leftLegGroup.name = 'leftLeg';
     leftLegGroup.position.set(-0.14, 0.92, 0);
 
-    const leftLeg = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.09, 0.07, 0.82, 8),
+    const leftThigh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.075, 0.42, 8),
       pantsMat
     );
-    leftLeg.position.y = -0.42;
-    leftLeg.castShadow = true;
-    leftLegGroup.add(leftLeg);
+    leftThigh.position.y = -0.21;
+    leftThigh.castShadow = true;
+    leftLegGroup.add(leftThigh);
 
-    // Shoe with sole
+    const leftKnee = new THREE.Group();
+    leftKnee.name = 'leftKnee';
+    leftKnee.position.set(0, -0.42, 0);
+
+    const leftShin = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.075, 0.062, 0.44, 8),
+      pantsMat
+    );
+    leftShin.position.y = -0.22;
+    leftShin.castShadow = true;
+    leftKnee.add(leftShin);
+
     const leftShoe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.1, 0.26),
+      new THREE.BoxGeometry(0.13, 0.1, 0.26),
       shoeMat
     );
-    leftShoe.position.set(0, -0.86, 0.05);
+    leftShoe.position.set(0, -0.44, 0.06);
     leftShoe.castShadow = true;
-    leftLegGroup.add(leftShoe);
+    leftKnee.add(leftShoe);
 
+    leftLegGroup.add(leftKnee);
     characterGroup.add(leftLegGroup);
 
     // Right Leg
@@ -301,22 +370,35 @@ export class EntityMeshFactory {
     rightLegGroup.name = 'rightLeg';
     rightLegGroup.position.set(0.14, 0.92, 0);
 
-    const rightLeg = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.09, 0.07, 0.82, 8),
+    const rightThigh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.075, 0.42, 8),
       pantsMat
     );
-    rightLeg.position.y = -0.42;
-    rightLeg.castShadow = true;
-    rightLegGroup.add(rightLeg);
+    rightThigh.position.y = -0.21;
+    rightThigh.castShadow = true;
+    rightLegGroup.add(rightThigh);
+
+    const rightKnee = new THREE.Group();
+    rightKnee.name = 'rightKnee';
+    rightKnee.position.set(0, -0.42, 0);
+
+    const rightShin = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.075, 0.062, 0.44, 8),
+      pantsMat
+    );
+    rightShin.position.y = -0.22;
+    rightShin.castShadow = true;
+    rightKnee.add(rightShin);
 
     const rightShoe = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.1, 0.26),
+      new THREE.BoxGeometry(0.13, 0.1, 0.26),
       shoeMat
     );
-    rightShoe.position.set(0, -0.86, 0.05);
+    rightShoe.position.set(0, -0.44, 0.06);
     rightShoe.castShadow = true;
-    rightLegGroup.add(rightShoe);
+    rightKnee.add(rightShoe);
 
+    rightLegGroup.add(rightKnee);
     characterGroup.add(rightLegGroup);
 
     return characterGroup;
@@ -558,5 +640,133 @@ export class EntityMeshFactory {
     }
 
     return group;
+  }
+
+  /**
+   * Poses an NPC sitting properly on a park bench with natural 90-degree bent knees,
+   * flat thighs, vertical shins, feet on ground, and interacting realistically with a smartphone!
+   */
+  public static animateSittingNpcWithPhone(character: THREE.Group, time: number) {
+    // 1. Natural Sitting Posture: Thighs forward 90 degrees, knees bent down 90 degrees
+    const leftLeg = character.getObjectByName('leftLeg');
+    const rightLeg = character.getObjectByName('rightLeg');
+    const leftKnee = character.getObjectByName('leftKnee');
+    const rightKnee = character.getObjectByName('rightKnee');
+
+    if (leftLeg) leftLeg.rotation.x = -Math.PI / 2;
+    if (rightLeg) rightLeg.rotation.x = -Math.PI / 2;
+    if (leftKnee) leftKnee.rotation.x = Math.PI / 2;
+    if (rightKnee) rightKnee.rotation.x = Math.PI / 2;
+
+    // Bench height offset so character sits flush on bench slats
+    character.position.y = 0.45;
+
+    // 2. Head & Arm Actions (Talking on Phone vs. Looking at Screen)
+    const head = character.getObjectByName('headGroup') || character.children.find(c => c.type === 'Group' && c.position.y > 1.6);
+    const rightArm = character.getObjectByName('rightArm');
+    const rightForearm = character.getObjectByName('rightForearm');
+    const leftArm = character.getObjectByName('leftArm');
+    const leftForearm = character.getObjectByName('leftForearm');
+    const phoneProp = character.getObjectByName('smartphoneProp');
+
+    if (phoneProp) phoneProp.visible = true;
+
+    // Cycle: 8-second repeating cycle
+    // 0s-5.5s: Holding phone to ear, talking, slight head nods
+    // 5.5s-8.0s: Lowers phone to chest level, looks down, taps screen with left hand
+    const cycleTime = (time * 0.8) % 8.0;
+
+    if (cycleTime < 5.5) {
+      // Talking on phone
+      if (rightArm) {
+        rightArm.rotation.x = -1.15 + Math.sin(time * 3) * 0.03;
+        rightArm.rotation.z = -0.35;
+        rightArm.rotation.y = 0.25;
+      }
+      if (rightForearm) {
+        rightForearm.rotation.x = -1.1;
+        rightForearm.rotation.y = 0.4;
+      }
+      // Head tilts toward phone
+      if (head) {
+        head.rotation.z = 0.12 + Math.sin(time * 4) * 0.04; // nodding gesture
+        head.rotation.y = 0.1 + Math.sin(time * 1.5) * 0.05;
+      }
+      // Left arm rests casually on bench/lap
+      if (leftArm) {
+        leftArm.rotation.x = -0.4;
+        leftArm.rotation.z = 0.15;
+      }
+      if (leftForearm) {
+        leftForearm.rotation.x = -0.5;
+      }
+    } else {
+      // Looking down at screen & texting
+      if (rightArm) {
+        rightArm.rotation.x = -0.65;
+        rightArm.rotation.z = -0.15;
+        rightArm.rotation.y = 0.35;
+      }
+      if (rightForearm) {
+        rightForearm.rotation.x = -0.7;
+        rightForearm.rotation.y = 0.2;
+      }
+      // Left arm brought up to type/tap on phone screen
+      if (leftArm) {
+        leftArm.rotation.x = -0.65;
+        leftArm.rotation.z = 0.2;
+        leftArm.rotation.y = -0.3;
+      }
+      if (leftForearm) {
+        leftForearm.rotation.x = -0.8 + Math.sin(time * 8) * 0.08; // Tapping finger gesture
+      }
+      // Head looks down at screen
+      if (head) {
+        head.rotation.x = 0.35;
+        head.rotation.z = 0;
+        head.rotation.y = 0;
+      }
+    }
+  }
+
+  /**
+   * Poses natural articulated walking/running gait with synchronized hips, knees, and swinging arms
+   */
+  public static animateWalkingHuman(character: THREE.Group, time: number, isRunning: boolean = false) {
+    const leftLeg = character.getObjectByName('leftLeg');
+    const rightLeg = character.getObjectByName('rightLeg');
+    const leftKnee = character.getObjectByName('leftKnee');
+    const rightKnee = character.getObjectByName('rightKnee');
+    const leftArm = character.getObjectByName('leftArm');
+    const rightArm = character.getObjectByName('rightArm');
+    const leftForearm = character.getObjectByName('leftForearm');
+    const rightForearm = character.getObjectByName('rightForearm');
+
+    const freq = isRunning ? 11.0 : 7.0;
+    const stride = isRunning ? 0.85 : 0.55;
+    const legPhase = Math.sin(time * freq);
+
+    // Thigh rotation
+    if (leftLeg) leftLeg.rotation.x = legPhase * stride;
+    if (rightLeg) rightLeg.rotation.x = -legPhase * stride;
+
+    // Knee flex on backstroke
+    if (leftKnee) {
+      leftKnee.rotation.x = legPhase > 0 ? legPhase * stride * 0.9 : 0.08;
+    }
+    if (rightKnee) {
+      rightKnee.rotation.x = legPhase < 0 ? -legPhase * stride * 0.9 : 0.08;
+    }
+
+    // Arm counter-swing
+    const armStride = isRunning ? 0.95 : 0.45;
+    if (leftArm) leftArm.rotation.x = -legPhase * armStride;
+    if (rightArm) rightArm.rotation.x = legPhase * armStride;
+
+    if (leftForearm) leftForearm.rotation.x = isRunning ? -0.7 : -0.25;
+    if (rightForearm) rightForearm.rotation.x = isRunning ? -0.7 : -0.25;
+
+    // Subtle torso vertical bounce
+    character.position.y = Math.abs(Math.sin(time * freq)) * (isRunning ? 0.12 : 0.05);
   }
 }
