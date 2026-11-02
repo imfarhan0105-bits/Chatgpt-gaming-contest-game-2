@@ -1,4 +1,4 @@
-# COCK & KEYS 🐓🔑
+# COCK & KEYS
 
 > **A real-time, first-person 3D multiplayer browser indie game.**
 > 
@@ -6,7 +6,7 @@
 
 ---
 
-## 🎮 Game Premise & Rules
+## Game Premise & Rules
 
 1. **Match Start (2–4 Players):**
    - Each player spawns in the town disguised as an ordinary town resident (**Pedestrian**, **Waiter**, **Doctor**, or **Lawyer**).
@@ -34,7 +34,7 @@
 
 ---
 
-## 🛠️ Tech Stack & Architecture
+## Tech Stack & Architecture
 
 - **Client:** Three.js, TypeScript, Vite.
 - **Server:** Node.js v24 authoritative server, persistent WebSockets (`ws`), 20Hz tick simulation.
@@ -45,7 +45,7 @@
 
 ---
 
-## 🚀 Quickstart & Development
+## Quickstart & Development
 
 ### Prerequisites
 - Node.js (v20+ or v24+)
@@ -84,38 +84,3 @@ Executes all unit tests, game rule simulations, and live WebSocket E2E server te
 
 ---
 
-## 🌐 Free Public Deployment (₹0 Budget)
-
-The game includes a unified production setup where the Node server serves both the static web frontend and persistent WebSockets on a single port (`process.env.PORT`).
-
-### Option A: Render.com (Free Tier — Verified Persistent WebSockets)
-1. Push this repository to GitHub.
-2. Create a new **Web Service** on [Render.com](https://render.com).
-3. Connect your repository.
-4. Settings:
-   - **Environment:** `Node` or `Docker`
-   - **Build Command:** `corepack enable && pnpm install && pnpm run build:client`
-   - **Start Command:** `node --experimental-strip-types src/server/index.ts`
-   - **Instance Type:** `Free`
-5. Deploy! Render provisions a free HTTPS/WSS URL (`https://cock-and-keys.onrender.com`).
-
-### Option B: Railway / Fly.io / Glitch
-- Using the included [`Dockerfile`](file:///home/imfarhan0105/Desktop/game/Dockerfile):
-```bash
-fly launch
-# or deploy directly on Railway free tier
-```
-
----
-
-## 🧪 Verified Acceptance Tests
-- [x] Decoy key does not trigger memory loss.
-- [x] Genuine key triggers collapse, memory loss, inventory drop, riddle & smile.
-- [x] Key carrier cannot attack or use weapons.
-- [x] Riddle points to observable town landmarks for player's assigned house.
-- [x] Unlocking wrong house fails; unlocking correct assigned house wins.
-- [x] Wrongful NPC kills increment Red Meter (+1); never decreases.
-- [x] Red Meter 5 triggers only attacked faction retaliation.
-- [x] Red Meter 7 triggers town-wide universal hostility.
-- [x] Red Meter 8 causes immediate game over.
-- [x] Shareable 4-letter room codes & real WebSocket synchronization.
